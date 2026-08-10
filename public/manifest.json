@@ -1,0 +1,27 @@
+{
+  "short_name": "BITALIS",
+  "name": "BITALIS - Ventas y Cobranza Campo",
+  "description": "Sistema PWA de Ventas y Cobranza en Campo con Sincronización Offline, Rastreo GPS y Notificaciones Push.",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/pwaicon/192/192",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://picsum.photos/seed/pwaicon/512/512",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "id": "bitalis-cobranza-pwa",
+  "scope": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["business", "finance", "productivity"]
+}

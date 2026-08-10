@@ -1,0 +1,11 @@
+{
+  "name": "Remix Remix Remix Bitalispro11pro",
+  "description": "Plataforma PWA BITALIS para ventas casa por casa, cobranza semanal, OCR de contratos con Gemini AI, gestión de productos, zonas y cartera completa de clientes.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

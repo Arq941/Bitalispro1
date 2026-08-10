@@ -1,0 +1,114 @@
+@import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+/* Mapbox GL Essential Mobile Layout & Positioning Overrides */
+.mapboxgl-map {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.mapboxgl-canvas-container,
+.mapboxgl-canvas {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none !important;
+}
+
+.mapboxgl-marker {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  will-change: transform;
+  pointer-events: auto !important;
+  display: block !important;
+  z-index: 10;
+}
+
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-bottom-right,
+.mapboxgl-ctrl-top-left,
+.mapboxgl-ctrl-top-right {
+  display: none !important;
+}
+
+:root {
+  /* BITALIS Brand Corporate Palette */
+  --bitalis-primary: #059669;
+  --bitalis-primary-dark: #047857;
+  --bitalis-primary-light: #10b981;
+  --bitalis-accent: #34d399;
+  --bitalis-indigo: #4f46e5;
+  --bitalis-slate-bg: #0b0f19;
+  --bitalis-card-bg: #0f172a;
+}
+
+@layer utilities {
+  .bg-bitalis-primary {
+    background-color: var(--bitalis-primary);
+  }
+  .bg-bitalis-dark {
+    background-color: var(--bitalis-primary-dark);
+  }
+  .text-bitalis-primary {
+    color: var(--bitalis-primary-light);
+  }
+  .border-bitalis-primary {
+    border-color: var(--bitalis-primary);
+  }
+
+  /* Print styling for 1/4 letter size cards */
+  @media print {
+    body {
+      background-color: white !important;
+      color: black !important;
+      font-size: 11px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    .no-print {
+      display: none !important;
+    }
+
+    .print-only {
+      display: block !important;
+    }
+
+    @page {
+      size: letter portrait;
+      margin: 0.5cm;
+    }
+
+    .print-grid-container {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
+      grid-template-rows: 1fr 1fr !important;
+      gap: 4mm !important;
+      width: 100% !important;
+      height: 100vh !important;
+      page-break-after: always;
+    }
+
+    .card-quarter-letter {
+      border: 1.5px dashed #333 !important;
+      padding: 8px !important;
+      box-sizing: border-box !important;
+      background: #fff !important;
+      color: #000 !important;
+      height: 130mm !important;
+      max-height: 135mm !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+      overflow: hidden !important;
+      font-family: Arial, sans-serif !important;
+    }
+  }
+}
