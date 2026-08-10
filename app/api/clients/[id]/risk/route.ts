@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ClientService } from '@/src/crm/client.service';
 import { getClientUserContext } from '@/src/crm/auth-helper';
-import { RiskLevel } from '@prisma/client';
+
+type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
 
 export async function POST(
   req: NextRequest,

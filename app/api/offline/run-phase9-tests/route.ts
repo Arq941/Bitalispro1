@@ -22,26 +22,31 @@ export async function GET(req: NextRequest) {
     const collectorUser = await prisma.user.create({
       data: {
         email: `collector-p9-${testSuffix}@test.com`,
-        fullName: 'Cobrador Fase 9',
-        role: 'COBRADOR',
+        firstName: 'Cobrador',
+        lastName: 'Fase 9',
+        passwordHash: 'hash_p9_collector',
       },
     });
 
     const supervisorUser = await prisma.user.create({
       data: {
         email: `supervisor-p9-${testSuffix}@test.com`,
-        fullName: 'Supervisora Fase 9',
-        role: 'SUPERVISORA',
+        firstName: 'Supervisora',
+        lastName: 'Fase 9',
+        passwordHash: 'hash_p9_supervisor',
       },
     });
 
     const client = await prisma.client.create({
       data: {
-        fullName: `Cliente Fase 9 ${testSuffix}`,
+        clientNumber: `CLI-P9-${testSuffix}`,
+        firstName: 'Cliente',
+        lastName: `Fase 9 ${testSuffix}`,
         phone: '555999000',
         status: 'ACTIVE',
       },
     });
+
 
     const sale = await prisma.sale.create({
       data: {

@@ -27,7 +27,7 @@ export function getSalesUserContext(req: NextRequest): UserContext {
   };
 }
 
-export function extractUserContext(req: NextRequest): UserContext {
+export async function extractUserContext(req: NextRequest): Promise<UserContext> {
   return getSalesUserContext(req);
 }
 

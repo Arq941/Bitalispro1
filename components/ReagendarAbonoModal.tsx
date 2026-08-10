@@ -39,13 +39,11 @@ export default function ReagendarAbonoModal({
   const [notaExplicativa, setNotaExplicativa] = useState<string>('');
   
   const callback = onConfirmReagendar || onConfirm;
-
-  if (!isOpen || !cliente) return null;
-  
   const pagoSemanalHabitual = venta?.pagoSemanal || 100;
   const saldoActual = venta?.saldoActual || 0;
-  
   const [montoPrometido, setMontoPrometido] = useState<number>(pagoSemanalHabitual);
+
+  if (!isOpen || !cliente) return null;
 
   const esExcedente = montoPrometido > pagoSemanalHabitual;
   const montoExcedente = Math.max(0, montoPrometido - pagoSemanalHabitual);

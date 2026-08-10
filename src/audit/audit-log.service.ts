@@ -36,6 +36,16 @@ export class AuditLogService {
     return created;
   }
 
+  public static record(dto: any): AuditLogEntry {
+    return this.log({
+      userId: dto.userId || 'SYSTEM',
+      action: dto.action,
+      entity: dto.resource || dto.entity || 'UNKNOWN',
+      entityId: dto.resourceId || dto.entityId || 'UNKNOWN',
+      notes: typeof dto.payload === 'object' ? JSON.stringify(dto.payload) : dto.notes,
+    });
+  }
+
   public static getLogs(): AuditLogEntry[] {
     return [...this.logs];
   }

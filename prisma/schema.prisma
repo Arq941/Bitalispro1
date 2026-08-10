@@ -176,6 +176,7 @@ model User {
   paymentsAsCollector  Payment[]     @relation("CollectorPayments")
   cashSessions         CashSession[]
   auditLogs            AuditLog[]
+  notifications        Notification[]
 
   @@map("users")
 }
@@ -455,19 +456,31 @@ model ClientVisit {
 }
 
 model ClientRenewal {
-  id             String    @id @default(uuid())
-  clientId       String
-  sourceCreditId String?
-  status         String    @default("PENDING")
-  estimatedDate  DateTime?
-  assignedTo     String?
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  clientId             String
+  sourceCreditId       String?
+  creditId             String?
+  status               String    @default("RENEWAL_PENDING")
+  progressPercentage   Decimal   @default(0.00) @db.Decimal(5, 2)
+  remainingBalance     Decimal   @default(0.00) @db.Decimal(12, 2)
+  estimatedRenewalDate DateTime?
+  assignedSellerId     String?
+  assignedSupervisorId String?
+  lastContactAt        DateTime?
+  convertedSaleId      String?
+  reason               String?
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@index([sourceCreditId])
+  @@index([creditId])
+  @@index([assignedSellerId])
+  @@index([assignedSupervisorId])
+  @@index([status])
   @@map("client_renewals")
 }
 
@@ -652,20 +665,50 @@ model KardexMovement {
   @@map("kardex_movements")
 }
 
+model Supplier {
+  id          String   @id @default(uuid())
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  address     String?
+  taxId       String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders ProductOrder[]
+
+  @@map("suppliers")
+}
+
 model ProductOrder {
-  id          String             @id @default(uuid())
-  orderNumber String             @unique
-  supplier    String?
-  warehouseId String
-  status      ProductOrderStatus @default(PENDING)
-  totalAmount Decimal            @default(0.00) @db.Decimal(12, 2)
-  userId      String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id                 String    @id @default(uuid())
+  orderNumber        String    @unique
+  supplierId         String?
+  supplier           String?
+  warehouseId        String
+  status             String    @default("DRAFT")
+  requestedBy        String?
+  approvedBy         String?
+  requestedAt        DateTime?
+  approvedAt         DateTime?
+  expectedDate       DateTime?
+  totalAmount        Decimal   @default(0.00) @db.Decimal(12, 2)
+  totalEstimatedCost Decimal   @default(0.00) @db.Decimal(12, 2)
+  notes              String?
+  userId             String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
-  items     ProductOrderItem[]
+  supplierRef Supplier?          @relation(fields: [supplierId], references: [id])
+  warehouse   Warehouse          @relation(fields: [warehouseId], references: [id])
+  items       ProductOrderItem[]
+  receipts    PurchaseReceipt[]
 
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([status])
   @@map("product_orders")
 }
 
@@ -681,7 +724,66 @@ model ProductOrderItem {
   order   ProductOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
 
+  @@index([orderId])
+  @@index([productId])
   @@map("product_order_items")
+}
+
+model PurchaseReceipt {
+  id            String   @id @default(uuid())
+  receiptNumber String   @unique
+  orderId       String
+  warehouseId   String
+  receivedBy    String
+  receiptType   String   @default("RECEPCION_TOTAL")
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  order ProductOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items PurchaseReceiptItem[]
+
+  @@index([orderId])
+  @@index([warehouseId])
+  @@map("purchase_receipts")
+}
+
+model PurchaseReceiptItem {
+  id               String   @id @default(uuid())
+  receiptId        String
+  productId        String
+  quantityReceived Int
+  unitCost         Decimal  @db.Decimal(12, 2)
+  totalCost        Decimal  @db.Decimal(12, 2)
+  createdAt        DateTime @default(now())
+
+  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+  @@index([productId])
+  @@map("purchase_receipt_items")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  priority  String    @default("MEDIUM")
+  title     String
+  message   String    @db.Text
+  entity    String?
+  entityId  String?
+  status    String    @default("UNREAD")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([priority])
+  @@index([status])
+  @@index([type])
+  @@map("notifications")
 }
 
 model AuthorizationRequest {

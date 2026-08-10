@@ -331,7 +331,7 @@ export class OfflineSyncService {
 
     const payAmount = new Decimal(amount);
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       // Check existing Payment by idempotencyKey
       const existingPayment = await tx.payment.findUnique({
         where: { idempotencyKey },
@@ -345,7 +345,7 @@ export class OfflineSyncService {
           originalOperation: true,
           data: existingPayment,
           serverReceivedAt: serverReceivedAt.toISOString(),
-        };
+        } as SyncOperationResult;
       }
 
       // Find credit
@@ -394,8 +394,9 @@ export class OfflineSyncService {
           conflictCode: 'CREDIT_CLOSED',
           errorMessage: 'El crédito ya se encuentra liquidado',
           serverReceivedAt: serverReceivedAt.toISOString(),
-        };
+        } as SyncOperationResult;
       }
+
 
       // ABAC: Check collector cash session
       const cashSession = await tx.cashSession.findFirst({
@@ -515,7 +516,7 @@ export class OfflineSyncService {
           newSaldo: finalSaldo,
         },
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 
@@ -534,7 +535,7 @@ export class OfflineSyncService {
     const { saleId, amount, paymentMethod = 'CASH' } = payload;
     const dpAmount = new Decimal(amount || 0);
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       const existingDp = await tx.saleDownPayment.findFirst({
         where: { saleId },
       });
@@ -546,7 +547,7 @@ export class OfflineSyncService {
           duplicate: true,
           data: existingDp,
           serverReceivedAt: serverReceivedAt.toISOString(),
-        };
+        } as SyncOperationResult;
       }
 
       const dp = await tx.saleDownPayment.create({
@@ -580,7 +581,7 @@ export class OfflineSyncService {
         status: 'SYNCED',
         data: dp,
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 
@@ -598,7 +599,7 @@ export class OfflineSyncService {
   ): Promise<SyncOperationResult> {
     const { clientId, creditId, result, visitType = 'COLLECTION', noPaymentReason, notes, gpsLatitude, gpsLongitude, accuracy } = payload;
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       const visit = await tx.collectionVisit.create({
         data: {
           clientId,
@@ -638,7 +639,7 @@ export class OfflineSyncService {
         status: 'SYNCED',
         data: visit,
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 
@@ -656,7 +657,7 @@ export class OfflineSyncService {
   ): Promise<SyncOperationResult> {
     const { creditId, paymentScheduleId, newDate, reason, notes, gpsLatitude, gpsLongitude } = payload;
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       const schedule = await tx.paymentSchedule.findUnique({
         where: { id: paymentScheduleId },
       });
@@ -708,7 +709,7 @@ export class OfflineSyncService {
         status: 'SYNCED',
         data: reschedule,
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 
@@ -726,7 +727,7 @@ export class OfflineSyncService {
   ): Promise<SyncOperationResult> {
     const { creditId, clientId, promisedAmount, promisedDate, notes, gpsLatitude, gpsLongitude } = payload;
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       const promise = await tx.paymentPromise.create({
         data: {
           creditId,
@@ -762,7 +763,7 @@ export class OfflineSyncService {
         status: 'SYNCED',
         data: promise,
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 
@@ -780,7 +781,7 @@ export class OfflineSyncService {
   ): Promise<SyncOperationResult> {
     const { amount, description, category = 'GENERAL', gpsLatitude, gpsLongitude } = payload;
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
       const cashSession = await tx.cashSession.findFirst({
         where: {
           userId,
@@ -830,7 +831,7 @@ export class OfflineSyncService {
         status: 'SYNCED',
         data: expense,
         serverReceivedAt: serverReceivedAt.toISOString(),
-      };
+      } as SyncOperationResult;
     });
   }
 

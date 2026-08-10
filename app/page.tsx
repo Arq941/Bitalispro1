@@ -209,6 +209,7 @@ const AdminView = lazyWithRetry(() => import('@/components/AdminView'));
 const CarteraClientesView = lazyWithRetry(() => import('@/components/CarteraClientesView'));
 const CajaControlView = lazyWithRetry(() => import('@/components/CajaControlView'));
 const CommissionsModule = lazyWithRetry(() => import('@/components/CommissionsModule'));
+const Phase10Center = lazyWithRetry(() => import('@/components/Phase10Center'));
 
 export default function Home() {
   // Action Notice Toast & Push Notification State
@@ -239,7 +240,7 @@ export default function Home() {
   // Authentication & Active Tab State
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
   const [activeTab, setActiveTab] = useState<
-    'vendedora' | 'sup_vendedores' | 'cobrador' | 'sup_cobradores' | 'caja' | 'cartera' | 'comisiones' | 'admin' | 'login'
+    'vendedora' | 'sup_vendedores' | 'cobrador' | 'sup_cobradores' | 'caja' | 'cartera' | 'comisiones' | 'fase10' | 'admin' | 'login'
   >('login');
 
   // Offline-First PWA State
@@ -336,6 +337,7 @@ export default function Home() {
       { id: 'cobrador', label: 'Cobrador Ruta', icon: MapPin, roles: ['cobrador', 'sup_cobradores', 'admin'] },
       { id: 'caja', label: 'Caja & Control (Fase 7)', icon: DollarSign, roles: ['cobrador', 'sup_cobradores', 'admin'] },
       { id: 'comisiones', label: 'Comisiones (Fase 8)', icon: Award, roles: ['vendedora', 'sup_vendedores', 'cobrador', 'sup_cobradores', 'admin'] },
+      { id: 'fase10', label: 'Renovaciones & Pedidos (F10)', icon: RefreshCw, roles: ['vendedora', 'sup_vendedores', 'cobrador', 'sup_cobradores', 'admin'] },
       { id: 'admin', label: 'Panel BITALIS', icon: Building2, roles: ['admin'] },
     ];
 
@@ -1435,6 +1437,10 @@ export default function Home() {
 
           {activeTab === 'comisiones' && (
             <CommissionsModule />
+          )}
+
+          {activeTab === 'fase10' && (
+            <Phase10Center currentUser={currentUser} />
           )}
 
           {activeTab === 'admin' && (

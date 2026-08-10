@@ -17,14 +17,15 @@ export async function GET(
 
     const statusCounts = {
       total: operations.length,
-      synced: operations.filter((o) => o.status === 'SYNCED').length,
-      queued: operations.filter((o) => o.status === 'QUEUED').length,
-      conflict: operations.filter((o) => o.status === 'CONFLICT').length,
-      rejected: operations.filter((o) => o.status === 'REJECTED').length,
-      failed: operations.filter((o) => o.status === 'FAILED').length,
+      synced: operations.filter((o: any) => o.status === 'SYNCED').length,
+      queued: operations.filter((o: any) => o.status === 'QUEUED').length,
+      conflict: operations.filter((o: any) => o.status === 'CONFLICT').length,
+      rejected: operations.filter((o: any) => o.status === 'REJECTED').length,
+      failed: operations.filter((o: any) => o.status === 'FAILED').length,
     };
 
-    const lastSyncOp = operations.find((o) => o.status === 'SYNCED');
+    const lastSyncOp = operations.find((o: any) => o.status === 'SYNCED');
+
 
     return NextResponse.json({
       success: true,

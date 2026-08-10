@@ -2,7 +2,9 @@ import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
 import { IdempotencyService } from '@/src/idempotency/idempotency.service';
 import { MediaStorageService } from './media-storage.service';
-import { RiskLevel, ClientStatus } from '@prisma/client';
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type ClientStatus = 'PROSPECT' | 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'BLOCKED';
+
 
 export interface ClientUserContext {
   userId: string;

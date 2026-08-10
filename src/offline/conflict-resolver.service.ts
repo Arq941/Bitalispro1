@@ -72,7 +72,8 @@ export class ConflictResolverService {
 
     const now = new Date();
 
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: any) => {
+
       // 1. Update SyncConflict
       const updatedConflict = await tx.syncConflict.update({
         where: { id: input.conflictId },

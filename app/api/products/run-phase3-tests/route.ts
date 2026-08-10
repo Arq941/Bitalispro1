@@ -173,7 +173,8 @@ export async function GET() {
 
     // Test 21: Kardex DELIVERY_OUT
     const kardexDeliver = await InventoryService.getKardex(p1.id, wh1.id);
-    const hasDeliveryOut = kardexDeliver.some((k) => k.type === 'DELIVERY_OUT' || k.movementType === 'DELIVERY_OUT');
+    const hasDeliveryOut = kardexDeliver.some((k: any) => k.type === 'DELIVERY_OUT' || k.movementType === 'DELIVERY_OUT');
+
     testResults.push({ id: 21, name: 'Kardex DELIVERY_OUT', passed: hasDeliveryOut });
 
     // Test 22: Devolución

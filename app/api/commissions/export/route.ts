@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     });
 
     const headers = ['ID', 'Empleado', 'Rol', 'Tipo', 'Base', 'Tasa', 'Monto Comisión', 'Estado', 'IdempotencyKey', 'Fecha'];
-    const rows = commissions.map((c) => [
+    const rows = commissions.map((c: any) => [
       c.id,
       c.employeeId,
       c.role,
@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
       c.createdAt.toISOString(),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.map((val) => `"${val}"`).join(','))].join('\n');
+    const csvContent = [headers.join(','), ...rows.map((r: any[]) => r.map((val: any) => `"${val}"`).join(','))].join('\n');
+
 
     return new NextResponse(csvContent, {
       status: 200,

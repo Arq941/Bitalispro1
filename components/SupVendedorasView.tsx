@@ -3187,7 +3187,7 @@ export default function SupVendedorasView({
                 {dsTipoVenta === 'CONTADO' ? (
                   <div className="space-y-3 bg-emerald-950/40 p-3 rounded-xl border border-emerald-800/80">
                     <span className="text-xs text-emerald-300 font-bold block">
-                      💵 Venta de Contado Directa (Se almacenará en Módulo "Líquidas / Contado")
+                      💵 Venta de Contado Directa (Se almacenará en Módulo &quot;Líquidas / Contado&quot;)
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>

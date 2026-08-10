@@ -63,7 +63,7 @@ export interface CreateProductOrderDto {
 }
 
 // In-Memory store for fast isolated testing or when DB connection is offline
-class InventoryStore {
+export class InventoryStore {
   static warehouses: Map<string, any> = new Map();
   static stocks: Map<string, any> = new Map(); // key: `${warehouseId}_${productId}`
   static reservations: Map<string, any> = new Map();
@@ -82,6 +82,8 @@ class InventoryStore {
 }
 
 export class InventoryService {
+  static stocks = InventoryStore.stocks;
+
   static clearMemoryStore() {
     InventoryStore.clear();
   }
