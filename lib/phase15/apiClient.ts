@@ -1,7 +1,7 @@
 'use client';
 
 export type ApiError = { status:number; code?:string; message:string; queued?:boolean };
-export type ApiOptions = RequestInit & { timeoutMs?:number; retry?:number; idempotencyKey?:string };
+export type ApiOptions = RequestInit & { timeoutMs?:number; retry?:number; idempotencyKey?:string; skipRefresh?:boolean };
 
 const friendly = (status:number, raw:any):ApiError => {
   const msg = String(raw?.error || raw?.message || '').toLowerCase();
@@ -13,9 +13,10 @@ const friendly = (status:number, raw:any):ApiError => {
 };
 
 function accessToken(){ if(typeof window==='undefined') return null; return localStorage.getItem('bitalis_access_token'); }
+async function refreshAccessToken(){if(typeof window==='undefined')return false;const refreshToken=localStorage.getItem('bitalis_refresh_token');if(!refreshToken)return false;try{const res=await fetch('/api/auth/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refreshToken}),cache:'no-store'});const body=await res.json().catch(()=>({}));if(!res.ok)return false;const next=body?.accessToken||body?.access_token||body?.tokens?.accessToken;const nextRefresh=body?.refreshToken||body?.refresh_token||body?.tokens?.refreshToken;if(!next)return false;localStorage.setItem('bitalis_access_token',next);if(nextRefresh)localStorage.setItem('bitalis_refresh_token',nextRefresh);return true;}catch{return false;}}
 
 export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promise<T>{
-  const { timeoutMs=15000, retry=0, idempotencyKey, headers, ...init } = options;
+  const { timeoutMs=15000, retry=0, idempotencyKey, headers, skipRefresh=false, ...init } = options;
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
   const token = accessToken();
@@ -26,13 +27,15 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
   try{
     const res = await fetch(path,{...init,headers:finalHeaders,signal:controller.signal,cache:'no-store'});
     const body = await res.json().catch(()=>({}));
-    if(!res.ok){
-      if(res.status===401 && typeof window!=='undefined') window.dispatchEvent(new CustomEvent('bitalis:session-expired'));
-      throw friendly(res.status,body);
+    if(res.status===401 && !skipRefresh && path!=='/api/auth/refresh'){
+      const refreshed=await refreshAccessToken();
+      if(refreshed)return apiClient<T>(path,{...options,skipRefresh:true});
+      if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('bitalis:session-expired'));
     }
+    if(!res.ok)throw friendly(res.status,body);
     return body as T;
   }catch(err:any){
-    if(retry>0 && typeof navigator!=='undefined' && navigator.onLine) return apiClient<T>(path,{...options,retry:retry-1});
+    if(retry>0 && typeof navigator!=='undefined' && navigator.onLine && err?.status!==401 && err?.status!==403) return apiClient<T>(path,{...options,retry:retry-1});
     if(err?.name==='AbortError') throw {status:0,code:'TIMEOUT',message:'La conexión tardó demasiado. Intenta nuevamente.'} satisfies ApiError;
     if(err?.message) throw err;
     throw {status:0,code:'NETWORK',message:'Sin conexión. Verifica tu red.'} satisfies ApiError;
