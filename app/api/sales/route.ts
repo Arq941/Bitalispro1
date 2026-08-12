@@ -15,6 +15,32 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const result = await SalesService.createSale(body, userContext);
+
+    // La supervisora también trabaja en campo y es autoridad de autorización.
+    // Si su propia venta cae en una política que normalmente requiere revisión
+    // (precio negociado o dos productos), se conserva todo el rastro de
+    // AuthorizationRequest y se aprueba mediante el flujo oficial del backend.
+    // La vendedora mantiene exactamente el flujo PENDING_AUTHORIZATION.
+    if (
+      result?.status === 'PENDING_AUTHORIZATION' &&
+      (userContext.role === 'SUPERVISORA' || userContext.role === 'ADMIN')
+    ) {
+      await SalesService.approveSale(
+        result.id,
+        userContext,
+        'Autorización en sitio por supervisión'
+      );
+
+      return NextResponse.json(
+        {
+          ...result,
+          status: 'APPROVED',
+          supervisorApprovedInField: true,
+        },
+        { status: 201 }
+      );
+    }
+
     return NextResponse.json(result, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
