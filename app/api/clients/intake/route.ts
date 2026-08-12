@@ -42,15 +42,19 @@ export async function POST(req: NextRequest) {
     const idempotencyKey = String(form.get('idempotencyKey') || `seller-intake-${Date.now()}`);
     const latitude = Number(form.get('latitude'));
     const longitude = Number(form.get('longitude'));
+    const locationAccuracy = Number(form.get('locationAccuracy'));
     const hasGps = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+    if (!hasGps) return NextResponse.json({ success: false, error: 'La ubicación del cliente es obligatoria para el alta en calle.' }, { status: 400 });
 
     const client = await ClientService.createClient({
       ...parsed,
       phone,
       customerType: 'PENDING_SUPERVISOR',
       assignedSellerId: user.userId,
-      latitude: hasGps ? latitude : undefined,
-      longitude: hasGps ? longitude : undefined,
+      latitude,
+      longitude,
+      locationAccuracy: Number.isFinite(locationAccuracy) ? locationAccuracy : undefined,
       idempotencyKey,
     }, user);
 
@@ -63,8 +67,8 @@ export async function POST(req: NextRequest) {
         fileContent: buffer,
         mimeType: file.type || 'image/jpeg',
         fileSize: file.size,
-        latitude: hasGps ? latitude : undefined,
-        longitude: hasGps ? longitude : undefined,
+        latitude,
+        longitude,
       }, user));
     }
 
