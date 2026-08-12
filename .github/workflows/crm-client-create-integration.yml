@@ -1,0 +1,124 @@
+name: CRM Client Create Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  crm-client-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: stage3_ci_only_secret_2026_bitalis_do_not_use_in_production
+      JWT_EXPIRES_IN: 15m
+      PORT: 3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+          test -n "$ADMIN_EMAIL" || (echo 'BITALIS_ADMIN_EMAIL is missing' && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo 'BITALIS_ADMIN_PASSWORD is missing' && exit 1)
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Start Next.js server
+        shell: bash
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          echo $! > /tmp/bitalis-next.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then
+              echo 'Next.js server is ready'
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+
+      - name: Test real client creation
+        shell: bash
+        run: |
+          node <<'NODE'
+          const http = require('http');
+
+          function request(method, path, body, token) {
+            return new Promise((resolve, reject) => {
+              const payload = body ? JSON.stringify(body) : null;
+              const req = http.request({
+                hostname: '127.0.0.1',
+                port: 3000,
+                path,
+                method,
+                headers: {
+                  ...(payload ? {'content-type':'application/json','content-length':Buffer.byteLength(payload)} : {}),
+                  ...(token ? {'authorization':`Bearer ${token}`} : {})
+                }
+              }, res => {
+                let data='';
+                res.on('data', c => data += c);
+                res.on('end', () => resolve({status:res.statusCode, body:data}));
+              });
+              req.on('error', reject);
+              if (payload) req.write(payload);
+              req.end();
+            });
+          }
+
+          (async () => {
+            const login = await request('POST','/api/auth/login',{
+              email: process.env.ADMIN_EMAIL,
+              password: process.env.ADMIN_PASSWORD
+            });
+            if (login.status !== 200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const loginJson = JSON.parse(login.body);
+            const token = loginJson.accessToken;
+            if (!token) throw new Error(`accessToken missing: ${login.body}`);
+
+            const nonce = Date.now();
+            const create = await request('POST','/api/clients',{
+              firstName: 'Prueba',
+              lastName: 'Integracion',
+              phone: `55${String(nonce).slice(-8)}`,
+              customerType: 'TEST_CI'
+            }, token);
+            if (create.status !== 201) throw new Error(`Create client HTTP ${create.status}: ${create.body}`);
+            const createdJson = JSON.parse(create.body);
+            if (!createdJson.success || !createdJson.client?.id || !createdJson.client?.clientNumber) {
+              throw new Error(`Invalid create client response: ${create.body}`);
+            }
+
+            const clientId = createdJson.client.id;
+            const detail = await request('GET',`/api/clients/${clientId}`,null,token);
+            if (detail.status !== 200) throw new Error(`Client detail HTTP ${detail.status}: ${detail.body}`);
+            const detailJson = JSON.parse(detail.body);
+            if (!detailJson.success || detailJson.client?.id !== clientId) {
+              throw new Error(`Client detail mismatch: ${detail.body}`);
+            }
+
+            console.log('CRM client creation integration PASSED');
+            console.log({clientId, clientNumber: createdJson.client.clientNumber});
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
