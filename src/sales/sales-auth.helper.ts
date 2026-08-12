@@ -3,27 +3,25 @@ import { UserContext } from './sales.service';
 import { SecurityService } from '@/src/server/auth/security.service';
 
 export function getSalesUserContext(req: NextRequest): UserContext {
-  const userIdHeader = req.headers.get('x-user-id');
-  const userRoleHeader = req.headers.get('x-user-role') as any;
   const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+    throw new Error('UNAUTHORIZED: Bearer token requerido.');
+  }
 
-  let userId = userIdHeader || 'user_vendedora_01';
-  let role: 'ADMIN' | 'SUPERVISORA' | 'VENDEDORA' | 'COBRADOR' = userRoleHeader || 'VENDEDORA';
+  const token = authHeader.slice(7).trim();
+  const verified = SecurityService.verifyAccessToken(token);
+  if (!verified || !verified.sub || !verified.role) {
+    throw new Error('UNAUTHORIZED: Token inválido o expirado.');
+  }
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const verified = SecurityService.verifyAccessToken(token);
-    if (verified && verified.sub) {
-      userId = verified.sub;
-      if (verified.role) {
-        role = verified.role as any;
-      }
-    }
+  const allowedRoles = ['ADMIN', 'SUPERVISORA', 'VENDEDORA', 'COBRADOR'] as const;
+  if (!allowedRoles.includes(verified.role as any)) {
+    throw new Error('FORBIDDEN: Rol no autorizado.');
   }
 
   return {
-    userId,
-    role,
+    userId: verified.sub,
+    role: verified.role as UserContext['role'],
   };
 }
 
@@ -32,4 +30,3 @@ export async function extractUserContext(req: NextRequest): Promise<UserContext>
 }
 
 export default extractUserContext;
-
