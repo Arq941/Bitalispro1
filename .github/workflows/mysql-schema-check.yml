@@ -14,14 +14,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 24
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies and create real lockfile
+        run: npm install
+
+      - name: Show Prisma versions
+        run: npx prisma -v
 
       - name: Generate complete MySQL Prisma schema
         run: node scripts/prepare-mysql-schema.js
@@ -41,7 +43,11 @@ jobs:
         run: npx prisma format --schema=prisma/schema.mysql.prisma
 
       - name: Validate MySQL Prisma schema
+        env:
+          DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
         run: npx prisma validate --schema=prisma/schema.mysql.prisma
 
       - name: Generate Prisma Client for MySQL
+        env:
+          DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
         run: npx prisma generate --schema=prisma/schema.mysql.prisma
