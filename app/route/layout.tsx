@@ -45,7 +45,7 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
     <>
       {children}
       {showEvidence && !routeFinished && <RouteFieldMode />}
-      {showEvidence && !routeFinished && <RouteEvidenceDrawer />}
+      {showEvidence && !routeFinished && <RouteEvidenceDrawer showTrigger={pathname !== '/route'} />}
       {showQuickActions && <RouteQuickActions />}
       {pathname === '/route' && <ReceiptFlowEnhancer />}
 
@@ -60,11 +60,11 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : (
-        <nav className="fixed bottom-3 left-1/2 z-[80] w-[calc(100%-24px)] max-w-lg -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl print:hidden">
+        <nav className="fixed bottom-2 left-1/2 z-[80] w-[calc(100%-16px)] max-w-lg -translate-x-1/2 rounded-[18px] border border-white/10 bg-slate-950/96 p-1 shadow-2xl shadow-black/35 backdrop-blur-xl print:hidden">
           <div className="grid grid-cols-4 gap-1">
             {nav.map(({ href, label, icon: Icon }) => {
               const active = href === '/route' ? pathname === '/route' : pathname.startsWith(href);
-              return <button key={href} type="button" onClick={() => router.push(href)} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-black transition sm:flex-row sm:gap-2 sm:text-xs ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}><Icon className="h-4 w-4" />{label}</button>;
+              return <button key={href} type="button" onClick={() => router.push(href)} className={`min-w-0 rounded-xl px-1 py-2 transition ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} flex min-h-12 flex-col items-center justify-center gap-1`}><Icon className="h-4 w-4 shrink-0" /><span className="w-full truncate text-center text-[9px] font-black leading-none sm:text-[10px]">{label}</span></button>;
             })}
           </div>
         </nav>
