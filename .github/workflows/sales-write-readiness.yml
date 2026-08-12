@@ -1,0 +1,63 @@
+name: Sales Write Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sales-write-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: bitalis_stage3_sales_ci_secret_2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Verify production prerequisites for a sale
+        run: |
+          node <<'NODE'
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+          (async()=>{
+            const admin = await prisma.user.findUnique({ where: { email: process.env.ADMIN_EMAIL } });
+            if (!admin) throw new Error('Admin user not found');
+
+            const client = await prisma.client.findFirst({ where: { status: { in: ['PROSPECT','ACTIVE'] } }, orderBy: { createdAt: 'desc' } });
+            const product = await prisma.product.findFirst({ where: { status: 'ACTIVE' }, orderBy: { createdAt: 'desc' } });
+            const warehouse = await prisma.warehouse.findFirst({ where: { isActive: true }, orderBy: { createdAt: 'asc' } });
+
+            console.log('ADMIN_OK', admin.id);
+            console.log('CLIENT_AVAILABLE', !!client, client?.id || 'NONE');
+            console.log('PRODUCT_AVAILABLE', !!product, product?.id || 'NONE');
+            console.log('WAREHOUSE_AVAILABLE', !!warehouse, warehouse?.id || 'NONE');
+
+            if (!client) throw new Error('No active/prospect client exists for sales integration');
+            if (!product) throw new Error('No active product exists for sales integration');
+            if (!warehouse) throw new Error('No active warehouse exists for sales integration');
+
+            const stock = await prisma.inventoryStock.findUnique({
+              where: { warehouseId_productId: { warehouseId: warehouse.id, productId: product.id } }
+            });
+            console.log('STOCK_RECORD', !!stock, stock ? {onHand:stock.quantityOnHand,reserved:stock.quantityReserved,available:stock.quantityAvailable} : null);
+            if (!stock || stock.quantityAvailable < 1) throw new Error('Selected active product has no available stock in selected warehouse');
+
+            console.log('SALES WRITE READINESS PASSED', { clientId: client.id, productId: product.id, warehouseId: warehouse.id });
+          })().finally(()=>prisma.$disconnect()).catch(e=>{console.error(e);process.exit(1)});
+          NODE
