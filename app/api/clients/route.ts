@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ClientService } from '@/src/crm/client.service';
 import { getClientUserContext } from '@/src/crm/auth-helper';
 import { PrismaService } from '@/src/database/prisma.service';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 function errorResponse(err: any, fallbackStatus = 500) {
   const message = err?.message || 'Error interno.';
@@ -17,6 +18,7 @@ function errorResponse(err: any, fallbackStatus = 500) {
 export async function GET(req: NextRequest) {
   try {
     const userContext = getClientUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'clients.view');
     const searchParams = req.nextUrl.searchParams;
 
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -53,6 +55,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const userContext = getClientUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'clients.create');
     const body = await req.json();
 
     if (!body?.firstName?.trim() || !body?.lastName?.trim() || !body?.phone?.trim()) {
@@ -76,15 +79,10 @@ export async function POST(req: NextRequest) {
       userContext
     );
 
-    // ClientService conserva un fallback en memoria para pruebas. En producción
-    // verificamos explícitamente que el alta haya quedado persistida en MySQL.
     const prisma = PrismaService.getInstance();
     let persisted = await prisma.client.findUnique({ where: { id: client.id } });
 
     if (!persisted) {
-      // Reintento mínimo y seguro: evita que un fallo en timeline/auditoría o en
-      // campos opcionales termine mostrando un cliente creado que solo existe
-      // en memoria y desaparece al recargar la pantalla.
       persisted = await prisma.client.create({
         data: {
           id: client.id,
