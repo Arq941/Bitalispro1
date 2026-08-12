@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle, Banknote, Bell, Boxes, CircleDollarSign, ClipboardList, Coins,
-  LogOut, Package, RefreshCw, Repeat2, ShieldCheck, ShoppingBag, TrendingUp,
+  LogOut, Package, RefreshCw, Repeat2, Route, ShieldCheck, ShoppingBag, TrendingUp,
   UserPlus, Users, WalletCards
 } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
@@ -16,6 +16,7 @@ const money = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN
 const amount = (value: any) => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 const modules = [
+  { title: 'Ruta de cobranza', subtitle: 'GPS, cercanía y siguiente cliente', path: '/route', icon: Route },
   { title: 'Clientes / CRM', subtitle: 'Altas, búsqueda y edición', path: '/clients', icon: Users },
   { title: 'Nueva venta', subtitle: 'Contado y crédito', path: '/sales', icon: ShoppingBag },
   { title: 'Cobranza', subtitle: 'Cartera y seguimiento', path: '/collections', icon: WalletCards },
@@ -92,6 +93,7 @@ export default function ProductionDashboardPage() {
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.15em] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" /> Producción MySQL</div>
         <h1 className="mt-4 text-2xl font-black sm:text-4xl">Hola, {displayName}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Centro operativo BITALIS. Toda la interfaz nueva trabaja sobre las APIs de producción y reemplaza el panel anterior.</p>
+        <button onClick={() => router.push('/route')} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950"><Route className="h-5 w-5"/> Iniciar ruta de cobranza</button>
       </section>
 
       {error && <div className="mt-4 flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100"><AlertTriangle className="h-5 w-5" />{error}</div>}
