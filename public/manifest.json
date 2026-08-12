@@ -1,27 +1,17 @@
 {
   "short_name": "BITALIS",
-  "name": "BITALIS - Ventas y Cobranza Campo",
-  "description": "Sistema PWA de Ventas y Cobranza en Campo con Sincronización Offline, Rastreo GPS y Notificaciones Push.",
+  "name": "BITALIS — ERP CRM y Cobranza en Ruta",
+  "description": "Sistema integral para ventas, cobranza en ruta, CRM, inventario, caja, comisiones y auditoría.",
   "icons": [
-    {
-      "src": "https://picsum.photos/seed/pwaicon/192/192",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://picsum.photos/seed/pwaicon/512/512",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
-    }
+    { "src": "/bitalis-symbol.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
   ],
-  "start_url": "/",
-  "id": "bitalis-cobranza-pwa",
+  "start_url": "/dashboard",
+  "id": "bitalis-production-pwa",
   "scope": "/",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#F3F4F6",
+  "theme_color": "#12224A",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
+  "lang": "es-MX",
   "categories": ["business", "finance", "productivity"]
 }
