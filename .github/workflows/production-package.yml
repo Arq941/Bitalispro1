@@ -1,0 +1,64 @@
+name: Production Package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build production app for MySQL
+        run: npm run build:mysql
+
+      - name: Prepare deploy package
+        run: |
+          rm -rf deploy-package
+          mkdir -p deploy-package
+          cp -R .next deploy-package/.next
+          if [ -d public ]; then cp -R public deploy-package/public; fi
+          cp package.json deploy-package/package.json
+          if [ -f package-lock.json ]; then cp package-lock.json deploy-package/package-lock.json; fi
+          mkdir -p deploy-package/prisma
+          cp prisma/schema.mysql.prisma deploy-package/prisma/schema.prisma
+          mkdir -p deploy-package/scripts
+          cp scripts/prepare-mysql-schema.js deploy-package/scripts/prepare-mysql-schema.js
+          cat > deploy-package/START_HERE.txt <<'EOF'
+          BITALIS PRODUCTION PACKAGE
+
+          Runtime requirements:
+          - Node.js 24
+          - Environment variable DATABASE_URL set to Hostinger MySQL
+          - Environment variable JWT_SECRET set to a long random secret
+
+          Install and start:
+          1. npm install --omit=dev
+          2. npx prisma generate --schema=prisma/schema.prisma
+          3. npm start
+
+          Default application port is 3000 unless PORT is supplied by hosting.
+          Never upload .env or database passwords into GitHub.
+          EOF
+          tar -czf bitalis-production.tar.gz -C deploy-package .
+          test -s bitalis-production.tar.gz
+
+      - name: Upload production package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitalis-production
+          path: bitalis-production.tar.gz
+          retention-days: 7
