@@ -26,7 +26,7 @@ jobs:
         run: npm install
 
       - name: Generate MySQL schema
-        run: node scripts/generate-mysql-schema.js
+        run: node scripts/prepare-mysql-schema.js
 
       - name: Generate Prisma Client for MySQL
         run: npx prisma generate --schema=prisma/schema.mysql.prisma
