@@ -8,10 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      JWT_SECRET: stage3_ci_only_secret_2026_bitalis_do_not_use_in_production
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -22,11 +22,20 @@ jobs:
         with:
           node-version: 24
 
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+          test -n "$ADMIN_EMAIL" || (echo 'BITALIS_ADMIN_EMAIL is missing' && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo 'BITALIS_ADMIN_PASSWORD is missing' && exit 1)
+
       - name: Install dependencies
         run: npm install
 
-      - name: Generate Prisma Client
-        run: npx prisma generate
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
 
       - name: Start Next.js server
         run: |
@@ -65,7 +74,7 @@ jobs:
           (async () => {
             const email = process.env.ADMIN_EMAIL;
             const password = process.env.ADMIN_PASSWORD;
-            if (!email || !password) throw new Error('ADMIN_EMAIL/ADMIN_PASSWORD secrets are required');
+            if (!email || !password) throw new Error('BITALIS admin secrets are required');
 
             const unauth = await request('GET','/api/clients?page=1&limit=5');
             if (unauth.status !== 401) throw new Error(`Expected unauthenticated clients request to return 401, got ${unauth.status}: ${unauth.body}`);
