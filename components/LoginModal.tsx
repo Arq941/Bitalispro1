@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Usuario } from '@/types';
-import { LogIn, Lock, User, LogOut, RefreshCw, Database, CheckCircle2, AlertCircle } from 'lucide-react';
-import { supabase, checkSupabaseConnection } from '../db.js';
+import { useState } from 'react';
+import { Usuario, UserRole } from '@/types';
+import {
+  LogIn,
+  Lock,
+  Mail,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+} from 'lucide-react';
 import BitalisLogo from './BitalisLogo';
 
 interface LoginModalProps {
@@ -14,215 +24,222 @@ interface LoginModalProps {
   onRefreshUsers?: () => void;
 }
 
-export default function LoginModal({ usuarios, currentUser, onLogin, onLogout, onRefreshUsers }: LoginModalProps) {
-  const [userInput, setUserInput] = useState<string>('');
-  const [passwordInput, setPasswordInput] = useState<string>('');
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [dbStatus, setDbStatus] = useState<{ connected: boolean; latency: number } | null>(null);
+function roleToLegacyRole(role: string): UserRole {
+  switch (role) {
+    case 'ADMIN':
+      return 'admin';
+    case 'VENDEDORA':
+      return 'vendedora';
+    case 'COBRADOR':
+      return 'cobrador';
+    case 'SUPERVISORA':
+      return 'sup_vendedores';
+    default:
+      return 'admin';
+  }
+}
 
-  useEffect(() => {
-    checkSupabaseConnection().then((res) => setDbStatus(res));
-  }, []);
+function stableNumericId(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) || 1;
+}
+
+export default function LoginModal({ currentUser, onLogin, onLogout }: LoginModalProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const term = userInput.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
-    if (!term) {
-      setErrorMsg('Por favor ingresa tu usuario o correo electrónico.');
+    if (!normalizedEmail || !password) {
+      setErrorMsg('Ingresa tu correo y contraseña.');
+      return;
+    }
+
+    if (!normalizedEmail.includes('@')) {
+      setErrorMsg('Para la versión de producción inicia sesión con tu correo electrónico.');
       return;
     }
 
     setIsLoading(true);
     setErrorMsg('');
 
-    // 1. Buscar primero en la lista local de usuarios
-    let userToLogin = usuarios.find(
-      (u) =>
-        (u.usuario && u.usuario.toLowerCase() === term) ||
-        (u.email && u.email.toLowerCase() === term) ||
-        (u.nombre && u.nombre.toLowerCase() === term)
-    );
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
 
-    // 2. Si no se encuentra en local, consultar directamente en Supabase (Nube)
-    if (!userToLogin) {
-      try {
-        const { data, error } = await supabase.from('usuarios').select('*');
-        if (data && data.length > 0) {
-          const remoteMapped: Usuario[] = data.map((db: any) => ({
-            id: db.id,
-            nombre: db.nombre || '',
-            usuario: db.usuario || '',
-            email: db.email || '',
-            password: db.password || '',
-            pin: db.pin || '1234',
-            rol: db.rol || 'admin',
-            telefono: db.telefono || '',
-            activo: Boolean(db.activo),
-            avatarUrl: db.avatar_url || db.avatarUrl || '',
-            sueldoBase: Number(db.sueldo_base || db.sueldoBase || 1500),
-            porcentajeComision: Number(db.porcentaje_comision || db.porcentajeComision || 5),
-            comisionPorVenta: Number(db.comision_por_venta || db.comisionPorVenta || 100)
-          }));
+      const result = await response.json().catch(() => null);
 
-          userToLogin = remoteMapped.find(
-            (u) =>
-              (u.usuario && u.usuario.toLowerCase() === term) ||
-              (u.email && u.email.toLowerCase() === term) ||
-              (u.nombre && u.nombre.toLowerCase() === term)
-          );
-
-          if (userToLogin && onRefreshUsers) {
-            onRefreshUsers();
-          }
-        }
-      } catch (err) {
-        console.warn('Error al verificar usuario directo en Supabase:', err);
+      if (!response.ok || !result?.success || !result?.accessToken || !result?.user) {
+        setErrorMsg(result?.message || 'No fue posible iniciar sesión. Verifica tus credenciales.');
+        return;
       }
+
+      localStorage.setItem('bitalis_access_token', result.accessToken);
+      if (result.refreshToken) localStorage.setItem('bitalis_refresh_token', result.refreshToken);
+      localStorage.setItem('bitalis_auth_user', JSON.stringify(result.user));
+
+      const apiUser = result.user;
+      const mappedUser: Usuario = {
+        id: stableNumericId(String(apiUser.id)),
+        nombre: `${apiUser.firstName || ''} ${apiUser.lastName || ''}`.trim() || apiUser.email,
+        email: apiUser.email,
+        usuario: apiUser.email,
+        rol: roleToLegacyRole(apiUser.role),
+        telefono: '',
+        activo: true,
+      };
+
+      setEmail('');
+      setPassword('');
+      onLogin(mappedUser);
+    } catch (error) {
+      console.error('Production login error:', error);
+      setErrorMsg('No se pudo conectar con el servidor de BITALIS. Intenta nuevamente.');
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    setIsLoading(false);
-
-    if (!userToLogin) {
-      setErrorMsg('Usuario o correo no registrado en el sistema ni en la nube.');
-      return;
-    }
-
-    if (userToLogin.password && passwordInput !== userToLogin.password) {
-      setErrorMsg('Contraseña incorrecta.');
-      return;
-    }
-
-    setErrorMsg('');
-    setUserInput('');
-    setPasswordInput('');
-    onLogin(userToLogin);
+  const handleLogout = () => {
+    localStorage.removeItem('bitalis_access_token');
+    localStorage.removeItem('bitalis_refresh_token');
+    localStorage.removeItem('bitalis_auth_user');
+    onLogout();
   };
 
   const getRoleLabel = (rol: string) => {
     switch (rol) {
-      case 'vendedora':
-        return 'Vendedora de Campo';
-      case 'sup_vendedores':
-        return 'Supervisora de Ventas';
-      case 'cobrador':
-        return 'Cobrador de Ruta';
-      case 'sup_cobradores':
-        return 'Supervisor de Cobranza';
-      case 'admin':
-        return 'Administrador BITALIS';
-      default:
-        return rol;
+      case 'vendedora': return 'Vendedora de Campo';
+      case 'sup_vendedores': return 'Supervisión de Ventas';
+      case 'cobrador': return 'Cobranza de Ruta';
+      case 'sup_cobradores': return 'Supervisión de Cobranza';
+      case 'admin': return 'Administrador BITALIS';
+      default: return rol;
     }
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl max-w-md mx-auto space-y-6">
-      <div className="text-center space-y-2 flex flex-col items-center">
-        <BitalisLogo size="lg" variant="dark" className="mb-2" />
-        <h2 className="text-xl font-bold text-white tracking-tight">Acceso al Sistema</h2>
-        <p className="text-xs text-slate-400">Ingresa tus credenciales autorizadas</p>
+    <div className="w-full max-w-md mx-auto overflow-hidden rounded-[28px] border border-emerald-400/15 bg-slate-950/90 shadow-2xl shadow-black/40 backdrop-blur-xl">
+      <div className="relative px-6 pt-8 pb-6 sm:px-8">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400" />
+        <div className="flex flex-col items-center text-center">
+          <div className="mb-4 rounded-3xl border border-white/5 bg-slate-900/70 px-5 py-4 shadow-inner">
+            <BitalisLogo size="lg" variant="dark" />
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-white">Bienvenido a BITALIS</h1>
+          <p className="mt-2 max-w-xs text-sm leading-5 text-slate-400">
+            Ventas, cobranza, clientes e inventario en una sola operación.
+          </p>
 
-        {/* Status Conexión Supabase Nube */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-[11px]">
-          <Database className={`w-3.5 h-3.5 ${dbStatus?.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
-          <span className="text-slate-300">
-            {dbStatus === null
-              ? 'Verificando nube...'
-              : dbStatus.connected
-              ? `Base de Datos Supabase Conectada (${dbStatus.latency}ms)`
-              : 'Modo Local Offline (Sin Supabase)'}
-          </span>
-          <span className={`w-2 h-2 rounded-full ${dbStatus?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[11px] font-semibold text-emerald-300">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>Acceso seguro · MySQL + JWT</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          </div>
         </div>
       </div>
 
-      {currentUser ? (
-        <div className="space-y-4 pt-2">
-          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Sesión Activa</span>
-              <span className="text-indigo-400 font-bold">{getRoleLabel(currentUser.rol)}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
-                <User className="w-5 h-5" />
+      <div className="border-t border-white/5 bg-slate-900/55 px-6 py-6 sm:px-8">
+        {currentUser ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs font-bold text-emerald-300">
+                <CheckCircle2 className="h-4 w-4" /> Sesión activa
               </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-white truncate">{currentUser.nombre}</h3>
-                <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
+              <p className="truncate text-base font-black text-white">{currentUser.nombre}</p>
+              <p className="mt-1 truncate text-xs text-slate-400">{currentUser.email}</p>
+              <span className="mt-3 inline-block rounded-lg bg-slate-950/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300">
+                {getRoleLabel(currentUser.rol)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-300 transition active:scale-[0.98]"
+            >
+              <LogOut className="h-4 w-4" /> Cerrar sesión
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleFormSubmit} className="space-y-4">
+            <div>
+              <label className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-300">
+                <Mail className="h-4 w-4 text-emerald-400" /> Correo electrónico
+              </label>
+              <input
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nombre@empresa.com"
+                className="w-full rounded-2xl border border-slate-700/70 bg-slate-950 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-300">
+                <Lock className="h-4 w-4 text-emerald-400" /> Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Escribe tu contraseña"
+                  className="w-full rounded-2xl border border-slate-700/70 bg-slate-950 px-4 py-3.5 pr-12 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-emerald-400/70 focus:ring-4 focus:ring-emerald-400/10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-500 transition hover:text-slate-300"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={onLogout}
-            className="w-full bg-red-950/60 hover:bg-red-900 text-red-300 font-bold py-2.5 px-4 rounded-xl border border-red-800/60 transition text-xs flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-            Cerrar Sesión
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleFormSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-indigo-400" />
-              Usuario o Correo:
-            </label>
-            <input
-              type="text"
-              required
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ej: admin, vendedora1, maria@empresa.com"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5 text-indigo-400" />
-              Contraseña:
-            </label>
-            <input
-              type="password"
-              required
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              placeholder="Escribe tu contraseña"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
-            />
-          </div>
-
-          {errorMsg && (
-            <div className="p-3 bg-red-950/80 border border-red-800/80 text-red-300 rounded-xl text-xs text-center font-medium">
-              {errorMsg}
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-sm cursor-pointer disabled:opacity-50 mt-2"
-          >
-            {isLoading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Verificando en Supabase Nube...
-              </>
-            ) : (
-              <>
-                <LogIn className="w-4 h-4" />
-                Iniciar Sesión
-              </>
+            {errorMsg && (
+              <div className="flex items-start gap-2 rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-xs leading-5 text-red-200">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
             )}
-          </button>
-        </form>
-      )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3.5 text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/15 transition active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+            >
+              {isLoading ? (
+                <><RefreshCw className="h-4 w-4 animate-spin" /> Validando acceso...</>
+              ) : (
+                <><LogIn className="h-4 w-4" /> Entrar a BITALIS</>
+              )}
+            </button>
+
+            <p className="pt-1 text-center text-[10px] leading-4 text-slate-500">
+              Credenciales protegidas por autenticación de servidor. La contraseña no se guarda en el dispositivo.
+            </p>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
