@@ -67,7 +67,7 @@ export class PermissionService {
     });
   }
 
-  public static async getEffectivePermissionCodes(userId: string) {
+  private static async getPermissionContext(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -82,13 +82,19 @@ export class PermissionService {
         },
       },
     });
-    if (!user) return [] as string[];
+    if (!user) return { inherited: new Set<string>(), configured: false };
 
     const inherited = new Set<string>();
+    let configured = false;
     for (const mapping of user.userRoles) {
+      if (mapping.role.rolePermissions.length > 0) configured = true;
       for (const rp of mapping.role.rolePermissions) inherited.add(rp.permission.code);
     }
+    return { inherited, configured };
+  }
 
+  public static async getEffectivePermissionCodes(userId: string) {
+    const { inherited } = await this.getPermissionContext(userId);
     const overrides = await this.getUserOverrides(userId);
     for (const override of overrides) {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
@@ -98,8 +104,20 @@ export class PermissionService {
   }
 
   public static async hasPermission(userId: string, permissionCode: string) {
-    const effective = await this.getEffectivePermissionCodes(userId);
-    return effective.includes(permissionCode);
+    const code = String(permissionCode || '').trim();
+    if (!code) return false;
+
+    const overrides = await this.getUserOverrides(userId);
+    const override = overrides.find((item) => item.permission_code === code);
+    if (override?.effect === 'DENY') return false;
+    if (override?.effect === 'ALLOW') return true;
+
+    const { inherited, configured } = await this.getPermissionContext(userId);
+    // Compatibilidad de producción: hasta que un rol tenga una matriz explícita,
+    // conserva el comportamiento RBAC histórico. Una DENEGACIÓN individual sí
+    // tiene efecto inmediatamente, incluso durante esta transición.
+    if (!configured) return true;
+    return inherited.has(code);
   }
 
   public static async requirePermission(userId: string, permissionCode: string) {
