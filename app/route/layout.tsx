@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ClipboardCheck, Flag, MapPinned, Navigation, Route, ShieldCheck } from 'lucide-react';
 import RouteEvidenceDrawer from '@/components/route/RouteEvidenceDrawer';
+import RouteQuickActions from '@/components/route/RouteQuickActions';
 
 export default function RouteLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -36,11 +37,13 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
   ];
 
   const showEvidence = pathname === '/route' || pathname === '/route/navigate' || pathname === '/route/map';
+  const showQuickActions = pathname === '/route' && !routeFinished;
 
   return (
     <>
       {children}
       {showEvidence && !routeFinished && <RouteEvidenceDrawer />}
+      {showQuickActions && <RouteQuickActions />}
 
       {pathname === '/route' && routeFinished ? (
         <div className="fixed inset-x-0 bottom-0 z-[90] border-t border-emerald-400/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
@@ -62,7 +65,7 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       )}
-      <div className="h-20 print:hidden" />
+      <div className={pathname === '/route' && !routeFinished ? 'h-40 print:hidden sm:h-20' : 'h-20 print:hidden'} />
     </>
   );
 }
