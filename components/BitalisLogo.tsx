@@ -15,7 +15,6 @@ export default function BitalisLogo({
   className = '',
   iconOnly = false
 }: BitalisLogoProps) {
-  // Height and dimensions for the logo image tag
   const heightClass = {
     sm: 'h-8 sm:h-9',
     md: 'h-10 sm:h-12',
@@ -32,11 +31,11 @@ export default function BitalisLogo({
 
   if (iconOnly) {
     return (
-      <div className={`inline-flex items-center justify-center shrink-0 ${className}`}>
+      <div className={`inline-flex shrink-0 items-center justify-center ${className}`}>
         <img
-          src="/bitalis-symbol.svg"
-          alt="Bitalis Symbol"
-          className={`${iconDimensions} object-contain filter drop-shadow-md transition-transform hover:scale-105`}
+          src="/vitalis-symbol.svg"
+          alt="Símbolo Vitalis"
+          className={`${iconDimensions} object-contain drop-shadow-sm transition-transform active:scale-95`}
           referrerPolicy="no-referrer"
         />
       </div>
@@ -44,11 +43,11 @@ export default function BitalisLogo({
   }
 
   return (
-    <div className={`inline-flex items-center select-none ${className}`}>
+    <div className={`inline-flex select-none items-center ${className}`}>
       <img
-        src="/bitalis-logo.svg"
-        alt="BITALIS - Productos Naturistas"
-        className={`${heightClass} w-auto object-contain filter drop-shadow-md transition-transform duration-200 hover:scale-[1.02]`}
+        src="/vitalis-logo.svg"
+        alt="VITALIS - Productos Naturistas"
+        className={`${heightClass} w-auto object-contain drop-shadow-sm transition-transform duration-200 active:scale-[.98]`}
         referrerPolicy="no-referrer"
       />
     </div>
