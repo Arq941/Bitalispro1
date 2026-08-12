@@ -2,7 +2,7 @@
 
 import { Camera, CalendarClock, Navigation, WalletCards, XCircle, Clock3, X, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 function buttons() {
   return Array.from(document.querySelectorAll('button')) as HTMLButtonElement[];
@@ -42,68 +42,39 @@ function parseSaldoActual(text: string) {
   return Number.isFinite(value) ? value : null;
 }
 
-const AUTO_NAV_KEY = 'bitalis_route_auto_nav_after_visit';
-
 export default function RouteQuickActions() {
   const router = useRouter();
   const [panel, setPanel] = useState<'none' | 'noPay' | 'reschedule'>('none');
   const [reason, setReason] = useState('NO_TENIA_DINERO');
   const [date, setDate] = useState('');
 
-  useEffect(() => {
-    const checkAdvance = () => {
-      if (sessionStorage.getItem(AUTO_NAV_KEY) !== '1') return;
-      const text = document.body?.innerText || '';
-      const success = text.includes('Visita registrada. Siguiente destino') || text.includes('Cliente reagendado. Siguiente destino');
-      if (!success) return;
-      sessionStorage.removeItem(AUTO_NAV_KEY);
-      window.setTimeout(() => router.push('/route/navigate'), 450);
-    };
-
-    const observer = new MutationObserver(checkAdvance);
-    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
-    checkAdvance();
-    return () => observer.disconnect();
-  }, [router]);
-
-  const openPhotos = () => {
-    const target = buttons().find((b) =>
-      (b.innerText || '').toUpperCase().includes('FOTOS') ||
-      (b.getAttribute('aria-label') || '').toLowerCase().includes('foto')
-    );
-    target?.click();
-  };
+  const openPhotos = () => window.dispatchEvent(new Event('bitalis:open-evidence'));
 
   const enhancePayment = () => {
     if (!clickButton('Registrar abono')) return;
-
     window.setTimeout(() => {
       const confirmButton = buttons().find((b) =>
         (b.innerText || '').toLowerCase().includes('confirmar abono')
       );
       const dialog = confirmButton?.closest('div.fixed');
       if (!dialog || dialog.querySelector('[data-bitalis-quick-pay]')) return;
-
       const input = dialog.querySelector('input[inputmode="decimal"]') as HTMLInputElement | null;
       if (!input) return;
-
       const saldoActual = parseSaldoActual(dialog.textContent || '');
       const wrap = document.createElement('div');
       wrap.setAttribute('data-bitalis-quick-pay', 'true');
       wrap.className = 'mt-3 grid grid-cols-4 gap-2';
-
       [100, 150, 200, 300].forEach((amount) => {
         const quickButton = document.createElement('button');
         quickButton.type = 'button';
         quickButton.textContent = `$${amount}`;
-        quickButton.className = 'min-h-12 rounded-xl border border-emerald-400/20 bg-emerald-500/10 text-xs font-black text-emerald-200';
+        quickButton.className = 'min-h-11 rounded-xl border border-emerald-400/20 bg-emerald-500/10 text-xs font-black text-emerald-200';
         quickButton.onclick = () => {
           const safeAmount = saldoActual == null ? amount : Math.min(amount, saldoActual);
           setNativeValue(input, String(safeAmount));
         };
         wrap.appendChild(quickButton);
       });
-
       input.insertAdjacentElement('afterend', wrap);
     }, 80);
   };
@@ -111,10 +82,8 @@ export default function RouteQuickActions() {
   const submitNoPay = () => {
     const select = document.querySelector('select') as HTMLSelectElement | null;
     if (select) setNativeValue(select, reason);
-    sessionStorage.setItem(AUTO_NAV_KEY, '1');
     window.setTimeout(() => {
-      const clicked = clickButton('No pagó');
-      if (!clicked) sessionStorage.removeItem(AUTO_NAV_KEY);
+      clickButton('No pagó');
       setPanel('none');
     }, 50);
   };
@@ -128,23 +97,21 @@ export default function RouteQuickActions() {
     );
     if (input) setNativeValue(input, date);
     if (reasonSelect) setNativeValue(reasonSelect, 'PROMESA_PAGO');
-    sessionStorage.setItem(AUTO_NAV_KEY, '1');
     window.setTimeout(() => {
-      const clicked = clickButton('Reagendar');
-      if (!clicked) sessionStorage.removeItem(AUTO_NAV_KEY);
+      clickButton('Reagendar');
       setPanel('none');
     }, 80);
   };
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-[78px] z-[78] px-3 print:hidden sm:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5 gap-1.5 rounded-[22px] border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl">
-          <button type="button" onClick={enhancePayment} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl bg-emerald-500 text-[9px] font-black text-slate-950"><WalletCards className="h-4 w-4" />COBRAR</button>
-          <button type="button" onClick={() => setPanel('noPay')} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-orange-400/20 bg-orange-500/10 text-[9px] font-black text-orange-200"><XCircle className="h-4 w-4" />NO PAGÓ</button>
-          <button type="button" onClick={() => setPanel('reschedule')} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-blue-400/20 bg-blue-500/10 text-[9px] font-black text-blue-200"><CalendarClock className="h-4 w-4" />REAGENDAR</button>
-          <button type="button" onClick={openPhotos} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-[#FF6A00]/30 bg-[#FF6A00]/10 text-[9px] font-black text-orange-200"><Camera className="h-4 w-4" />FOTOS</button>
-          <button type="button" onClick={() => router.push('/route/navigate')} className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white text-[9px] font-black text-slate-950"><Navigation className="h-4 w-4" />NAVEGAR</button>
+      <div className="fixed inset-x-0 bottom-[76px] z-[78] px-2 print:hidden sm:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 rounded-[20px] border border-white/10 bg-slate-950/96 p-1.5 shadow-2xl shadow-black/35 backdrop-blur-xl">
+          <DockButton label="COBRAR" onClick={enhancePayment} primary><WalletCards className="h-4 w-4" /></DockButton>
+          <DockButton label="NO PAGÓ" onClick={() => setPanel('noPay')} tone="orange"><XCircle className="h-4 w-4" /></DockButton>
+          <DockButton label="PROMESA" onClick={() => setPanel('reschedule')} tone="blue"><CalendarClock className="h-4 w-4" /></DockButton>
+          <DockButton label="FOTOS" onClick={openPhotos} tone="orange"><Camera className="h-4 w-4" /></DockButton>
+          <DockButton label="NAVEGAR" onClick={() => router.push('/route/navigate')} light><Navigation className="h-4 w-4" /></DockButton>
         </div>
       </div>
 
@@ -156,7 +123,6 @@ export default function RouteQuickActions() {
               <div><p className="text-[10px] font-black uppercase tracking-[.14em] text-[#C79A3B]">Visita rápida</p><h2 className="mt-1 text-xl font-black">{panel === 'noPay' ? '¿Qué ocurrió?' : 'Promesa / reagendar'}</h2></div>
               <button type="button" onClick={() => setPanel('none')} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900" aria-label="Cerrar"><X className="h-5 w-5" /></button>
             </div>
-
             {panel === 'noPay' ? (
               <>
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -180,4 +146,9 @@ export default function RouteQuickActions() {
       )}
     </>
   );
+}
+
+function DockButton({label,onClick,children,primary=false,light=false,tone}:{label:string;onClick:()=>void;children:React.ReactNode;primary?:boolean;light?:boolean;tone?:'orange'|'blue'}){
+  const style=primary?'bg-emerald-500 text-slate-950':light?'bg-white text-slate-950':tone==='blue'?'border border-blue-400/20 bg-blue-500/10 text-blue-200':'border border-orange-400/20 bg-orange-500/10 text-orange-200';
+  return <button type="button" onClick={onClick} className={`min-w-0 rounded-2xl ${style} flex min-h-13 flex-col items-center justify-center gap-1 px-1 py-2`}><span className="shrink-0">{children}</span><span className="w-full truncate text-center text-[8px] font-black leading-none tracking-tight">{label}</span></button>;
 }
