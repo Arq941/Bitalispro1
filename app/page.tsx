@@ -14,9 +14,42 @@ export default function ProductionLoginPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('bitalis_access_token');
-    const user = localStorage.getItem('bitalis_auth_user');
-    if (token && user) router.replace('/dashboard');
+    const removeLegacyPwa = async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+
+        const legacyKeys = [
+          'pwa_session_user',
+          'pwa_session_tab',
+          'pwa_clientes',
+          'pwa_ventas',
+          'pwa_abonos',
+          'pwa_cortes',
+          'pwa_productos',
+          'pwa_zonas',
+          'pwa_usuarios',
+          'pwa_audit_logs',
+          'pwa_clean_db_v2',
+          'bitalis_guide_disabled',
+        ];
+        legacyKeys.forEach((key) => localStorage.removeItem(key));
+      } catch (cleanupError) {
+        console.warn('No fue posible limpiar completamente el caché legacy:', cleanupError);
+      }
+    };
+
+    removeLegacyPwa().finally(() => {
+      const token = localStorage.getItem('bitalis_access_token');
+      const user = localStorage.getItem('bitalis_auth_user');
+      if (token && user) router.replace('/dashboard');
+    });
   }, [router]);
 
   const submit = async (event: FormEvent) => {
@@ -31,7 +64,8 @@ export default function ProductionLoginPage() {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        cache: 'no-store',
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const json = await response.json().catch(() => ({}));
