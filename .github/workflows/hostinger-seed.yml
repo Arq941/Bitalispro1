@@ -1,0 +1,65 @@
+name: Seed Hostinger Production Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type SEED_BITALIS to continue'
+        required: true
+        type: string
+
+jobs:
+  seed-production:
+    if: ${{ inputs.confirmation == 'SEED_BITALIS' }}
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      ADMIN_FIRST_NAME: ${{ secrets.BITALIS_ADMIN_FIRST_NAME }}
+      ADMIN_LAST_NAME: ${{ secrets.BITALIS_ADMIN_LAST_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+          test -n "$ADMIN_EMAIL" || (echo 'BITALIS_ADMIN_EMAIL is missing' && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo 'BITALIS_ADMIN_PASSWORD is missing' && exit 1)
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema
+        run: node scripts/prepare-mysql-schema.js
+
+      - name: Generate Prisma Client for MySQL
+        run: npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Seed roles permissions and admin
+        run: node scripts/seed-production.js
+
+      - name: Verify seeded data
+        run: |
+          node - <<'NODE'
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+          (async () => {
+            const roles = await prisma.role.count();
+            const permissions = await prisma.permission.count();
+            const admin = await prisma.user.findUnique({ where: { email: process.env.ADMIN_EMAIL.toLowerCase() } });
+            if (roles < 4) throw new Error(`Expected at least 4 roles, got ${roles}`);
+            if (permissions < 10) throw new Error(`Expected permissions, got ${permissions}`);
+            if (!admin) throw new Error('Admin user was not created');
+            console.log({ roles, permissions, admin: admin.email });
+            await prisma.$disconnect();
+          })().catch(async (e) => { console.error(e); await prisma.$disconnect(); process.exit(1); });
+          NODE
