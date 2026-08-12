@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ClientService } from '@/src/crm/client.service';
 import { getClientUserContext } from '@/src/crm/auth-helper';
 
+function errorResponse(err: any, fallbackStatus = 500) {
+  const message = err?.message || 'Error interno.';
+  if (message.includes('UNAUTHORIZED')) {
+    return NextResponse.json({ success: false, error: message }, { status: 401 });
+  }
+  if (message.includes('FORBIDDEN')) {
+    return NextResponse.json({ success: false, error: message }, { status: 403 });
+  }
+  return NextResponse.json({ success: false, error: message }, { status: fallbackStatus });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const userContext = getClientUserContext(req);
@@ -34,8 +45,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, ...result });
   } catch (err: any) {
-    const isForbidden = err.message?.includes('FORBIDDEN');
-    return NextResponse.json({ success: false, error: err.message }, { status: isForbidden ? 403 : 500 });
+    return errorResponse(err, 500);
   }
 }
 
@@ -47,6 +57,6 @@ export async function POST(req: NextRequest) {
     const client = await ClientService.createClient(body, userContext);
     return NextResponse.json({ success: true, client }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+    return errorResponse(err, 400);
   }
 }
