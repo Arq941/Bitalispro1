@@ -4,11 +4,11 @@ import { ImageLightboxProvider } from '@/components/ImageLightboxContext';
 import PWAProvider from '@/components/phase15/PWAProvider';
 
 export const metadata: Metadata = {
-  title: 'VITALIS • ERP CRM Cobranza en Ruta',
-  description: 'Sistema integral VITALIS para ventas, cobranza en ruta, CRM, inventario, caja, comisiones y auditoría.',
+  title: 'BITALIS • ERP CRM Cobranza en Ruta',
+  description: 'Sistema integral BITALIS para ventas, cobranza en ruta, CRM, inventario, caja, comisiones y auditoría.',
   manifest: '/manifest.json',
-  icons: { icon: '/vitalis-symbol.svg', apple: '/vitalis-symbol.svg' },
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'VITALIS' },
+  icons: { icon: '/bitalis-symbol.svg', apple: '/bitalis-symbol.svg' },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'BITALIS' },
 };
 export const viewport: Viewport = { themeColor:'#12224A', width:'device-width', initialScale:1, viewportFit:'cover' };
 
