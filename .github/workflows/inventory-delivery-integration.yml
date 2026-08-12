@@ -1,0 +1,119 @@
+name: Inventory Delivery Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type TEST_INVENTORY_DELIVERY to create and deliver one test sale item in production'
+        required: true
+        type: string
+
+jobs:
+  inventory-delivery-integration:
+    if: ${{ inputs.confirmation == 'TEST_INVENTORY_DELIVERY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: bitalis_stage3_inventory_ci_secret_2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Wait for Hostinger MySQL connectivity
+        run: |
+          for i in {1..8}; do
+            if node -e "const {PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.\$queryRawUnsafe('SELECT 1').then(()=>{console.log('MYSQL_CONNECTIVITY_OK');return p.\$disconnect()}).then(()=>process.exit(0)).catch(async()=>{try{await p.\$disconnect()}catch{};process.exit(1)})"; then exit 0; fi
+            echo "MySQL attempt $i failed; retrying..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Start Next.js server
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+
+      - name: Create sale reservation, deliver item and verify stock/kardex
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+
+          function request(method, path, body, token) {
+            return new Promise((resolve, reject) => {
+              const payload = body ? JSON.stringify(body) : null;
+              const req = http.request({hostname:'127.0.0.1',port:3000,path,method,headers:{...(payload?{'content-type':'application/json','content-length':Buffer.byteLength(payload)}:{}),...(token?{authorization:`Bearer ${token}`}:{})}}, res => {
+                let data=''; res.on('data',c=>data+=c); res.on('end',()=>resolve({status:res.statusCode,body:data}));
+              });
+              req.on('error',reject); if(payload) req.write(payload); req.end();
+            });
+          }
+
+          (async()=>{
+            const email=process.env.ADMIN_EMAIL, password=process.env.ADMIN_PASSWORD;
+            const client=await prisma.client.findFirst({where:{status:{in:['PROSPECT','ACTIVE']}},orderBy:{createdAt:'desc'}});
+            const product=await prisma.product.findFirst({where:{status:'ACTIVE'},orderBy:{createdAt:'desc'}});
+            const warehouse=await prisma.warehouse.findFirst({where:{isActive:true},orderBy:{createdAt:'asc'}});
+            if(!client||!product||!warehouse) throw new Error('Missing client/product/warehouse prerequisites');
+
+            const before=await prisma.inventoryStock.findUnique({where:{warehouseId_productId:{warehouseId:warehouse.id,productId:product.id}}});
+            if(!before||before.quantityAvailable<1) throw new Error('No available stock');
+
+            const login=await request('POST','/api/auth/login',{email,password});
+            if(login.status!==200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const lj=JSON.parse(login.body); const token=lj.accessToken||lj.data?.accessToken||lj.token;
+            if(!token) throw new Error('No access token');
+
+            const key=`inventory-ci-${Date.now()}`;
+            const sale=await request('POST','/api/sales',{clientId:client.id,warehouseId:warehouse.id,saleType:'CASH',items:[{productId:product.id,quantity:1,unitPrice:1000,negotiatedPrice:1000,minimumAuthorizedPrice:1000}],engancheCliente:0,idempotencyKey:`${key}-sale`},token);
+            if(sale.status!==201) throw new Error(`Sale HTTP ${sale.status}: ${sale.body}`);
+            const sj=JSON.parse(sale.body); const saleId=sj.id||sj.sale?.id||sj.data?.id||sj.data?.sale?.id;
+            if(!saleId) throw new Error('Sale response missing id');
+
+            const reservation=await prisma.inventoryReservation.findFirst({where:{saleId,status:'ACTIVE'},orderBy:{createdAt:'desc'}});
+            if(!reservation) throw new Error(`No ACTIVE reservation for sale ${saleId}`);
+
+            const reservedStock=await prisma.inventoryStock.findUnique({where:{warehouseId_productId:{warehouseId:warehouse.id,productId:product.id}}});
+            const delivered=await request('POST','/api/inventory/deliver',{warehouseId:warehouse.id,productId:product.id,quantity:1,reservationId:reservation.id,saleId,idempotencyKey:`${key}-delivery`},token);
+            if(delivered.status!==201) throw new Error(`Delivery HTTP ${delivered.status}: ${delivered.body}`);
+
+            const after=await prisma.inventoryStock.findUnique({where:{warehouseId_productId:{warehouseId:warehouse.id,productId:product.id}}});
+            const resAfter=await prisma.inventoryReservation.findUnique({where:{id:reservation.id}});
+            const kardex=await prisma.kardexMovement.findFirst({where:{warehouseId:warehouse.id,productId:product.id,referenceId:saleId,type:'DELIVERY_OUT'},orderBy:{createdAt:'desc'}});
+
+            if(!after||!reservedStock) throw new Error('Stock missing after delivery');
+            if(after.quantityOnHand!==reservedStock.quantityOnHand-1) throw new Error(`On-hand did not decrease by 1. Before=${reservedStock.quantityOnHand} After=${after.quantityOnHand}`);
+            if(after.quantityReserved!==Math.max(0,reservedStock.quantityReserved-1)) throw new Error(`Reserved stock did not decrease by 1. Before=${reservedStock.quantityReserved} After=${after.quantityReserved}`);
+            if(!resAfter||!['CONVERTED_TO_DELIVERY','RELEASED'].includes(resAfter.status)) throw new Error(`Unexpected reservation status: ${resAfter?.status}`);
+            if(!kardex) throw new Error('DELIVERY_OUT kardex movement was not persisted');
+
+            console.log('INVENTORY DELIVERY INTEGRATION PASSED',{saleId,reservationId:reservation.id,stockBefore:{onHand:reservedStock.quantityOnHand,reserved:reservedStock.quantityReserved},stockAfter:{onHand:after.quantityOnHand,reserved:after.quantityReserved},reservationStatus:resAfter.status,kardexId:kardex.id});
+          })().finally(()=>prisma.$disconnect()).catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
