@@ -5,11 +5,14 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "prisma generate && next build",
+    "build:mysql": "node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma && next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "prisma:format": "prisma format"
+    "prisma:format": "prisma format",
+    "prisma:mysql:generate": "node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma",
+    "prisma:mysql:validate": "node scripts/prepare-mysql-schema.js && prisma validate --schema=prisma/schema.mysql.prisma"
   },
   "dependencies": {
     "@google/genai": "*",
