@@ -12,7 +12,7 @@ jobs:
   credit-create-integration:
     if: ${{ inputs.confirmation == 'CREATE_TEST_CREDIT' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
       ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
@@ -35,6 +35,32 @@ jobs:
         run: |
           node scripts/prepare-mysql-schema.js
           npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Wait for Hostinger MySQL connectivity
+        run: |
+          node <<'NODE'
+          const { PrismaClient } = require('@prisma/client');
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          (async()=>{
+            let lastError;
+            for (let attempt = 1; attempt <= 8; attempt++) {
+              const prisma = new PrismaClient();
+              try {
+                await prisma.$queryRawUnsafe('SELECT 1');
+                console.log(`MYSQL_CONNECTIVITY_OK attempt=${attempt}`);
+                await prisma.$disconnect();
+                process.exit(0);
+              } catch (e) {
+                lastError = e;
+                console.log(`MYSQL_CONNECTIVITY_RETRY attempt=${attempt}/8`);
+                await prisma.$disconnect().catch(()=>{});
+                if (attempt < 8) await sleep(15000);
+              }
+            }
+            console.error(lastError);
+            process.exit(1);
+          })();
+          NODE
 
       - name: Start Next.js server
         run: |
