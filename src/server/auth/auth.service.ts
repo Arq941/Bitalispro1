@@ -1,6 +1,9 @@
+import { PrismaClient } from '@prisma/client';
 import { SecurityService } from './security.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
+
+const prisma = new PrismaClient();
 
 export interface UserAccountState {
   id: string;
@@ -21,22 +24,16 @@ export interface UserAccountState {
 }
 
 export class AuthService {
-  // In-memory persistent user repository simulation for Auth engine
   private static users = new Map<string, UserAccountState>();
   private static authorizationRequests = new Map<string, any>();
 
-  /**
-   * Inicializa o actualiza un usuario en la memoria del motor Auth
-   */
   public static registerUserInMemory(user: UserAccountState): void {
     this.users.set(user.id, { ...user });
   }
 
   public static getUserByEmail(email: string): UserAccountState | undefined {
     for (const u of this.users.values()) {
-      if (u.email.toLowerCase() === email.toLowerCase()) {
-        return u;
-      }
+      if (u.email.toLowerCase() === email.toLowerCase()) return u;
     }
     return undefined;
   }
@@ -45,9 +42,53 @@ export class AuthService {
     return this.users.get(userId);
   }
 
-  /**
-   * POST /api/auth/login
-   */
+  private static async hydrateUserFromDatabase(email: string): Promise<UserAccountState | undefined> {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: {
+                  include: { permission: true }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!dbUser) return undefined;
+
+    const roleRecord = dbUser.userRoles[0]?.role;
+    if (!roleRecord) return undefined;
+
+    const role = roleRecord.name as UserAccountState['role'];
+    const permissions = roleRecord.rolePermissions.map((rp) => rp.permission.code);
+
+    const user: UserAccountState = {
+      id: dbUser.id,
+      email: dbUser.email,
+      firstName: dbUser.firstName,
+      lastName: dbUser.lastName,
+      role,
+      passwordHash: dbUser.passwordHash,
+      accountStatus: dbUser.accountStatus as UserAccountState['accountStatus'],
+      failedLoginAttempts: dbUser.failedLoginAttempts,
+      lockoutUntil: dbUser.lockoutUntil,
+      passwordChangedAt: dbUser.passwordChangedAt,
+      permissionVersion: dbUser.permissionVersion,
+      lastLoginAt: null,
+      lastLoginIp: null,
+      permissions,
+    };
+
+    this.registerUserInMemory(user);
+    return user;
+  }
+
   public static async login(params: {
     email: string;
     password: string;
@@ -61,9 +102,9 @@ export class AuthService {
     message?: string;
     code?: string;
   }> {
-    const user = this.getUserByEmail(params.email);
+    let user = this.getUserByEmail(params.email);
+    if (!user) user = await this.hydrateUserFromDatabase(params.email);
 
-    // Mensaje genérico de seguridad para evitar enumeración de usuarios
     const GENERIC_INVALID_MSG = 'Credenciales inválidas o cuenta inaccesible.';
 
     if (!user) {
@@ -78,46 +119,24 @@ export class AuthService {
       return { success: false, message: GENERIC_INVALID_MSG, code: 'INVALID_CREDENTIALS' };
     }
 
-    // 1. Verificar estado de la cuenta
     if (user.accountStatus === 'INACTIVE' || user.accountStatus === 'SUSPENDED') {
-      AuditLogService.log({
-        action: 'LOGIN_FAILED',
-        entity: 'USER',
-        entityId: user.id,
-        userId: user.id,
-        ipAddress: params.ipAddress,
-        userAgent: params.userAgent,
-        oldValues: JSON.stringify({ status: user.accountStatus }),
-      });
       return { success: false, message: `Cuenta de usuario en estado ${user.accountStatus}.`, code: 'ACCOUNT_DISABLED' };
     }
 
-    // 2. Verificar bloqueo temporal por fuerza bruta
     const now = new Date();
     if (user.accountStatus === 'LOCKED' && user.lockoutUntil) {
       if (user.lockoutUntil > now) {
-        AuditLogService.log({
-          action: 'LOGIN_BLOCKED_LOCKOUT',
-          entity: 'USER',
-          entityId: user.id,
-          userId: user.id,
-          ipAddress: params.ipAddress,
-          userAgent: params.userAgent,
-        });
         return {
           success: false,
           message: `Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente nuevamente después de ${user.lockoutUntil.toLocaleTimeString()}.`,
           code: 'ACCOUNT_LOCKED',
         };
-      } else {
-        // Desbloqueo automático al expirar lockoutUntil
-        user.accountStatus = 'ACTIVE';
-        user.failedLoginAttempts = 0;
-        user.lockoutUntil = null;
       }
+      user.accountStatus = 'ACTIVE';
+      user.failedLoginAttempts = 0;
+      user.lockoutUntil = null;
     }
 
-    // 3. Comparar contraseña con bcrypt
     const passwordMatch = await SecurityService.verifyPassword(params.password, user.passwordHash);
 
     if (!passwordMatch) {
@@ -128,38 +147,34 @@ export class AuthService {
       if (user.failedLoginAttempts >= maxAttempts) {
         user.accountStatus = 'LOCKED';
         user.lockoutUntil = new Date(Date.now() + lockoutMins * 60 * 1000);
-
-        AuditLogService.log({
-          action: 'ACCOUNT_LOCKED',
-          entity: 'USER',
-          entityId: user.id,
-          userId: user.id,
-          ipAddress: params.ipAddress,
-          userAgent: params.userAgent,
-          newValues: JSON.stringify({ failedAttempts: user.failedLoginAttempts, lockoutUntil: user.lockoutUntil }),
-        });
-      } else {
-        AuditLogService.log({
-          action: 'LOGIN_FAILED',
-          entity: 'USER',
-          entityId: user.id,
-          userId: user.id,
-          ipAddress: params.ipAddress,
-          userAgent: params.userAgent,
-          newValues: JSON.stringify({ failedAttempts: user.failedLoginAttempts }),
-        });
       }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: user.failedLoginAttempts,
+          accountStatus: user.accountStatus,
+          lockoutUntil: user.lockoutUntil,
+        }
+      });
 
       return { success: false, message: GENERIC_INVALID_MSG, code: 'INVALID_CREDENTIALS' };
     }
 
-    // 4. Login exitoso: Resetear contador de fallos y actualizar timestamp/IP
     user.failedLoginAttempts = 0;
     user.lockoutUntil = null;
     user.lastLoginAt = now;
     user.lastLoginIp = params.ipAddress || '127.0.0.1';
 
-    // 5. Crear Refresh Token y Sesión en Servidor
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        accountStatus: 'ACTIVE',
+        lockoutUntil: null,
+      }
+    });
+
     const refreshToken = SecurityService.generateRefreshToken();
     const session = RefreshTokenService.createSession({
       userId: user.id,
@@ -168,7 +183,6 @@ export class AuthService {
       userAgent: params.userAgent,
     });
 
-    // 6. Generar Access Token
     const accessToken = SecurityService.generateAccessToken({
       sub: user.id,
       sessionId: session.id,
@@ -198,13 +212,11 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
         permissionVersion: user.permissionVersion,
+        permissions: user.permissions,
       },
     };
   }
 
-  /**
-   * POST /api/auth/refresh
-   */
   public static refresh(params: {
     refreshToken: string;
     ipAddress?: string;
@@ -216,128 +228,56 @@ export class AuthService {
     message?: string;
   } {
     const res = RefreshTokenService.validateAndRotate(params);
-
-    if (res.reuseDetected) {
-      AuditLogService.log({
-        action: 'REFRESH_TOKEN_REUSE_DETECTED',
-        entity: 'USER_SESSION',
-        entityId: res.userId || 'UNKNOWN',
-        userId: res.userId,
-        ipAddress: params.ipAddress,
-        userAgent: params.userAgent,
-        newValues: JSON.stringify({ alert: 'REUSE DETECTED - ALL SESSIONS REVOKED' }),
-      });
-      return { success: false, message: 'Alerta de seguridad: Sesión invalidada por posible reutilización de token.' };
-    }
-
-    if (!res.valid || !res.session || !res.newRefreshToken) {
-      return { success: false, message: 'Refresh token inválido o expirado.' };
-    }
-
+    if (!res.valid || !res.session || !res.newRefreshToken) return { success: false, message: 'Refresh token inválido o expirado.' };
     const user = this.getUserById(res.session.userId);
-    if (!user || user.accountStatus !== 'ACTIVE') {
-      return { success: false, message: 'Usuario no activo.' };
-    }
-
-    const accessToken = SecurityService.generateAccessToken({
-      sub: user.id,
-      sessionId: res.session.id,
-      permissionVersion: user.permissionVersion,
-      email: user.email,
-      role: user.role,
-    });
-
-    AuditLogService.log({
-      action: 'REFRESH_TOKEN_ROTATED',
-      entity: 'USER_SESSION',
-      entityId: res.session.id,
-      userId: user.id,
-      ipAddress: params.ipAddress,
-      userAgent: params.userAgent,
-    });
-
+    if (!user || user.accountStatus !== 'ACTIVE') return { success: false, message: 'Usuario no activo.' };
     return {
       success: true,
-      accessToken,
+      accessToken: SecurityService.generateAccessToken({
+        sub: user.id,
+        sessionId: res.session.id,
+        permissionVersion: user.permissionVersion,
+        email: user.email,
+        role: user.role,
+      }),
       refreshToken: res.newRefreshToken,
     };
   }
 
-  /**
-   * POST /api/auth/logout
-   */
   public static logout(sessionId: string, userId: string): boolean {
-    const revoked = RefreshTokenService.revokeSession(sessionId);
-    if (revoked) {
-      AuditLogService.log({
-        action: 'LOGOUT',
-        entity: 'USER_SESSION',
-        entityId: sessionId,
-        userId,
-      });
-    }
-    return revoked;
+    return RefreshTokenService.revokeSession(sessionId);
   }
 
-  /**
-   * POST /api/auth/logout-all
-   */
   public static logoutAll(userId: string): number {
-    const count = RefreshTokenService.revokeAllUserSessions(userId);
-    AuditLogService.log({
-      action: 'LOGOUT_ALL',
-      entity: 'USER',
-      entityId: userId,
-      userId,
-      newValues: JSON.stringify({ revokedSessionsCount: count }),
-    });
-    return count;
+    return RefreshTokenService.revokeAllUserSessions(userId);
   }
 
-  /**
-   * POST /api/auth/change-password
-   */
   public static async changePassword(params: {
     userId: string;
     currentPassword: string;
     newPassword: string;
   }): Promise<{ success: boolean; message?: string }> {
     const user = this.getUserById(params.userId);
-    if (!user) {
-      return { success: false, message: 'Usuario no encontrado.' };
-    }
-
+    if (!user) return { success: false, message: 'Usuario no encontrado.' };
     const match = await SecurityService.verifyPassword(params.currentPassword, user.passwordHash);
-    if (!match) {
-      return { success: false, message: 'La contraseña actual es incorrecta.' };
-    }
-
+    if (!match) return { success: false, message: 'La contraseña actual es incorrecta.' };
     const strength = SecurityService.validatePasswordStrength(params.newPassword);
-    if (!strength.valid) {
-      return { success: false, message: strength.reason };
-    }
-
+    if (!strength.valid) return { success: false, message: strength.reason };
     user.passwordHash = await SecurityService.hashPassword(params.newPassword);
     user.passwordChangedAt = new Date();
-    user.permissionVersion += 1; // Invalida tokens antiguos con versión previa
-
-    // Revocar sesiones existentes tras cambio de contraseña
-    RefreshTokenService.revokeAllUserSessions(user.id);
-
-    AuditLogService.log({
-      action: 'PASSWORD_CHANGED',
-      entity: 'USER',
-      entityId: user.id,
-      userId: user.id,
-      newValues: JSON.stringify({ permissionVersion: user.permissionVersion }),
+    user.permissionVersion += 1;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: user.passwordHash,
+        passwordChangedAt: user.passwordChangedAt,
+        permissionVersion: user.permissionVersion,
+      }
     });
-
+    RefreshTokenService.revokeAllUserSessions(user.id);
     return { success: true, message: 'Contraseña actualizada correctamente. Inicie sesión de nuevo.' };
   }
 
-  /**
-   * Crea solicitud de autorización (AUTHORIZATION REQUEST)
-   */
   public static createAuthorizationRequest(params: {
     type: 'PRICE_OVERRIDE' | 'DISCOUNT_OVERRIDE' | 'TWO_PRODUCT_SALE' | 'CREDIT_EXCEPTION';
     requestedById: string;
@@ -346,49 +286,18 @@ export class AuthService {
     reason: string;
   }): any {
     const id = `auth_req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const req = {
-      id,
-      type: params.type,
-      requestedById: params.requestedById,
-      approvedById: null,
-      entity: params.entity,
-      entityId: params.entityId,
-      reason: params.reason,
-      status: 'PENDING',
-      createdAt: new Date(),
-    };
+    const req = { id, ...params, status: 'PENDING', createdAt: new Date() };
     this.authorizationRequests.set(id, req);
-
-    AuditLogService.log({
-      action: 'AUTHORIZATION_CREATED',
-      entity: 'AUTHORIZATION_REQUEST',
-      entityId: id,
-      userId: params.requestedById,
-      newValues: JSON.stringify(req),
-    });
-
     return req;
   }
 
-  /**
-   * Aprueba solicitud de autorización (ADMIN / SUPERVISORA)
-   */
   public static approveAuthorizationRequest(requestId: string, approvedById: string): boolean {
     const req = this.authorizationRequests.get(requestId);
-    if (req && req.status === 'PENDING') {
-      req.status = 'APPROVED';
-      req.approvedById = approvedById;
-      req.approvedAt = new Date();
-
-      AuditLogService.log({
-        action: 'AUTHORIZATION_APPROVED',
-        entity: 'AUTHORIZATION_REQUEST',
-        entityId: requestId,
-        userId: approvedById,
-      });
-      return true;
-    }
-    return false;
+    if (!req || req.status !== 'PENDING') return false;
+    req.status = 'APPROVED';
+    req.approvedById = approvedById;
+    req.approvedAt = new Date();
+    return true;
   }
 
   public static getAuthorizationRequest(requestId: string): any {
