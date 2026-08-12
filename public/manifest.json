@@ -1,12 +1,12 @@
 {
-  "short_name": "BITALIS",
-  "name": "BITALIS — ERP CRM y Cobranza en Ruta",
-  "description": "Sistema integral para ventas, cobranza en ruta, CRM, inventario, caja, comisiones y auditoría.",
+  "short_name": "VITALIS",
+  "name": "VITALIS — ERP CRM y Cobranza en Ruta",
+  "description": "Sistema integral VITALIS para ventas, cobranza en ruta, CRM, inventario, caja, comisiones y auditoría.",
   "icons": [
-    { "src": "/bitalis-symbol.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
+    { "src": "/vitalis-symbol.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
   ],
   "start_url": "/dashboard",
-  "id": "bitalis-production-pwa",
+  "id": "vitalis-production-pwa",
   "scope": "/",
   "background_color": "#F3F4F6",
   "theme_color": "#12224A",
