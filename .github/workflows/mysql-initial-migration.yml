@@ -1,0 +1,59 @@
+name: Generate MySQL Initial Migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'prisma/schema.prisma'
+      - 'scripts/prepare-mysql-schema.js'
+      - 'package.json'
+
+jobs:
+  generate-mysql-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate complete MySQL Prisma schema
+        run: node scripts/prepare-mysql-schema.js
+
+      - name: Validate MySQL schema
+        env:
+          DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
+        run: npx prisma validate --schema=prisma/schema.mysql.prisma
+
+      - name: Generate initial SQL migration from empty schema
+        run: |
+          mkdir -p prisma/generated-migrations/0001_initial_mysql
+          npx prisma migrate diff \
+            --from-empty \
+            --to-schema-datamodel prisma/schema.mysql.prisma \
+            --script \
+            --output prisma/generated-migrations/0001_initial_mysql/migration.sql
+
+      - name: Verify migration contains core tables
+        run: |
+          test -s prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*users' prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*clients' prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*sales' prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*credits' prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*payments' prisma/generated-migrations/0001_initial_mysql/migration.sql
+          grep -qi 'CREATE TABLE.*kardex_movements' prisma/generated-migrations/0001_initial_mysql/migration.sql
+
+      - name: Upload migration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitalis-mysql-initial-migration
+          path: prisma/generated-migrations/0001_initial_mysql/migration.sql
+          if-no-files-found: error
