@@ -1,0 +1,85 @@
+name: Collection Commission Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type TEST_COLLECTION_COMMISSION'
+        required: true
+        type: string
+
+jobs:
+  commission-integration:
+    if: ${{ inputs.confirmation == 'TEST_COLLECTION_COMMISSION' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: bitalis_stage3_commission_ci_secret_2026
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+      - name: Wait for Hostinger MySQL
+        run: |
+          node <<'NODE'
+          const { PrismaClient } = require('@prisma/client');
+          const wait = ms => new Promise(r => setTimeout(r, ms));
+          (async()=>{for(let i=1;i<=8;i++){const p=new PrismaClient();try{await p.$queryRaw`SELECT 1`;console.log('MYSQL_CONNECTIVITY_OK');await p.$disconnect();return;}catch(e){console.log(`Attempt ${i}/8 failed`);await p.$disconnect();if(i===8)throw e;await wait(15000);}}})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Start Next.js server
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+      - name: Create payment and verify collection commission
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+          const request=(method,path,body,token)=>new Promise((resolve,reject)=>{const payload=body?JSON.stringify(body):null;const req=http.request({hostname:'127.0.0.1',port:3000,path,method,headers:{...(payload?{'content-type':'application/json','content-length':Buffer.byteLength(payload)}:{}),...(token?{authorization:`Bearer ${token}`}:{})}},res=>{let data='';res.on('data',c=>data+=c);res.on('end',()=>resolve({status:res.statusCode,body:data}));});req.on('error',reject);if(payload)req.write(payload);req.end();});
+          (async()=>{
+            let rule=await prisma.commissionRule.findFirst({where:{role:'COBRADOR',ruleType:'COLLECTION',active:true},orderBy:{updatedAt:'desc'}});
+            let createdRuleId=null;
+            if(!rule){rule=await prisma.commissionRule.create({data:{role:'COBRADOR',ruleType:'COLLECTION',rate:0.02,active:true,description:'INTEGRATION_TEST_COLLECTION_RULE'}});createdRuleId=rule.id;}
+
+            const credit=await prisma.credit.findFirst({where:{status:'ACTIVE',saldoActual:{gt:50}},orderBy:{updatedAt:'desc'}});
+            if(!credit) throw new Error('No ACTIVE credit with balance > 50 available');
+
+            const login=await request('POST','/api/auth/login',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD});
+            if(login.status!==200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const lj=JSON.parse(login.body); const token=lj.accessToken||lj.data?.accessToken||lj.token||lj.data?.token;
+            if(!token) throw new Error('No access token');
+
+            const key=`commission-ci-${Date.now()}`;
+            const pay=await request('POST','/api/payments',{creditId:credit.id,amount:50,paymentMethod:'BANK_TRANSFER',idempotencyKey:key},token);
+            if(pay.status!==201) throw new Error(`Payment HTTP ${pay.status}: ${pay.body}`);
+            const pj=JSON.parse(pay.body); const paymentId=pj.payment?.id||pj.data?.payment?.id||pj.id;
+            if(!paymentId) throw new Error(`Payment id missing: ${pay.body}`);
+
+            const commission=await prisma.commission.findFirst({where:{paymentId,commissionType:'COLLECTION_COMMISSION'}});
+            if(!commission) throw new Error('COLLECTION_COMMISSION was not created');
+            const expected=50*Number(rule.rate);
+            if(Math.abs(Number(commission.commissionAmount)-expected)>0.001) throw new Error(`Commission mismatch expected ${expected} got ${commission.commissionAmount}`);
+
+            console.log('COLLECTION COMMISSION PASSED',{paymentId,commissionId:commission.id,rate:Number(rule.rate),amount:Number(commission.commissionAmount)});
+            if(createdRuleId) await prisma.commissionRule.delete({where:{id:createdRuleId}});
+          })().finally(()=>prisma.$disconnect()).catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
