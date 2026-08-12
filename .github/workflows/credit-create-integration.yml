@@ -1,0 +1,147 @@
+name: Credit Create Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type CREATE_TEST_CREDIT to create one integration credit in production'
+        required: true
+        type: string
+
+jobs:
+  credit-create-integration:
+    if: ${{ inputs.confirmation == 'CREATE_TEST_CREDIT' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: bitalis_stage3_credit_ci_secret_2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Start Next.js server
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+
+      - name: Create sale, down payment, credit and verify MySQL
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+
+          function request(method, path, body, token) {
+            return new Promise((resolve, reject) => {
+              const payload = body ? JSON.stringify(body) : null;
+              const req = http.request({
+                hostname:'127.0.0.1', port:3000, path, method,
+                headers:{
+                  ...(payload?{'content-type':'application/json','content-length':Buffer.byteLength(payload)}:{}),
+                  ...(token?{authorization:`Bearer ${token}`}:{})
+                }
+              }, res => {
+                let data=''; res.on('data',c=>data+=c); res.on('end',()=>resolve({status:res.statusCode,body:data}));
+              });
+              req.on('error',reject); if(payload) req.write(payload); req.end();
+            });
+          }
+
+          (async()=>{
+            const email=process.env.ADMIN_EMAIL, password=process.env.ADMIN_PASSWORD;
+            if(!email||!password) throw new Error('BITALIS admin secrets are required');
+
+            const client = await prisma.client.findFirst({ where:{ status:{in:['PROSPECT','ACTIVE']} }, orderBy:{createdAt:'desc'} });
+            const product = await prisma.product.findFirst({ where:{ status:'ACTIVE' }, orderBy:{createdAt:'desc'} });
+            const warehouse = await prisma.warehouse.findFirst({ where:{ isActive:true }, orderBy:{createdAt:'asc'} });
+            if(!client||!product||!warehouse) throw new Error('Missing client/product/warehouse prerequisites');
+
+            const stock = await prisma.inventoryStock.findUnique({ where:{ warehouseId_productId:{warehouseId:warehouse.id,productId:product.id} } });
+            if(!stock || stock.quantityAvailable < 1) throw new Error('No available stock for selected product');
+
+            const login=await request('POST','/api/auth/login',{email,password});
+            if(login.status!==200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const lj=JSON.parse(login.body);
+            const token=lj.accessToken||lj.token||lj.data?.accessToken||lj.data?.token;
+            if(!token) throw new Error(`No access token: ${login.body}`);
+
+            const unique=`credit-ci-${Date.now()}`;
+            const salePayload={
+              clientId:client.id,
+              warehouseId:warehouse.id,
+              saleType:'CREDIT',
+              items:[{
+                productId:product.id,
+                quantity:1,
+                unitPrice:2000,
+                negotiatedPrice:2000,
+                minimumAuthorizedPrice:2000
+              }],
+              engancheCliente:200,
+              idempotencyKey:`${unique}-sale`
+            };
+
+            const createdSale=await request('POST','/api/sales',salePayload,token);
+            if(createdSale.status!==201) throw new Error(`POST /api/sales HTTP ${createdSale.status}: ${createdSale.body}`);
+            const sj=JSON.parse(createdSale.body);
+            const saleId=sj.id||sj.sale?.id||sj.data?.id||sj.data?.sale?.id;
+            if(!saleId) throw new Error(`Sale response missing id: ${createdSale.body}`);
+
+            const dp=await prisma.saleDownPayment.findUnique({where:{saleId}});
+            if(!dp) throw new Error(`Down payment was not persisted for sale ${saleId}`);
+            if(Number(dp.amount)!==200) throw new Error(`Unexpected down payment amount: ${dp.amount}`);
+
+            const creditPayload={
+              paymentFrequency:'WEEKLY',
+              installmentsCount:10,
+              idempotencyKey:`${unique}-credit`
+            };
+            const createdCredit=await request('POST',`/api/sales/${saleId}/credit`,creditPayload,token);
+            if(createdCredit.status!==201) throw new Error(`POST /api/sales/${saleId}/credit HTTP ${createdCredit.status}: ${createdCredit.body}`);
+
+            const credits=await prisma.credit.findMany({where:{saleId},include:{schedules:true}});
+            if(credits.length!==1) throw new Error(`Expected exactly 1 credit for sale, found ${credits.length}`);
+            const credit=credits[0];
+            if(credit.status!=='ACTIVE') throw new Error(`Credit status is ${credit.status}, expected ACTIVE`);
+            if(credit.schedules.length!==10) throw new Error(`Expected 10 schedules, found ${credit.schedules.length}`);
+            if(Number(credit.saldoActual)<=0) throw new Error(`Invalid credit balance ${credit.saldoActual}`);
+
+            const commission=await prisma.commission.findFirst({where:{creditId:credit.id,saleId}});
+            if(!commission) throw new Error('Sale commission was not persisted for credit');
+
+            console.log('CREDIT CREATE INTEGRATION PASSED', {
+              saleId,
+              creditId:credit.id,
+              saldoActual:Number(credit.saldoActual),
+              frequency:credit.paymentFrequency,
+              schedules:credit.schedules.length,
+              commissionId:commission.id
+            });
+          })().finally(()=>prisma.$disconnect()).catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
