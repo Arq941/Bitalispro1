@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ClipboardCheck, Flag, ShieldCheck } from 'lucide-react';
+import { ClipboardCheck, Flag, MapPinned, Route, ShieldCheck } from 'lucide-react';
 
 export default function RouteLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -27,43 +27,37 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
     return () => observer.disconnect();
   }, [pathname]);
 
+  const nav = [
+    { href: '/route', label: 'Cobranza', icon: Route },
+    { href: '/route/map', label: 'Mapa', icon: MapPinned },
+    { href: '/route/close', label: 'Cierre', icon: ClipboardCheck },
+  ];
+
   return (
     <>
       {children}
 
-      {pathname === '/route' && routeFinished && (
-        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-emerald-400/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
+      {pathname === '/route' && routeFinished ? (
+        <div className="fixed inset-x-0 bottom-0 z-[90] border-t border-emerald-400/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
           <div className="mx-auto flex max-w-5xl flex-col gap-3 rounded-[22px] border border-emerald-400/15 bg-gradient-to-r from-slate-900 to-emerald-950/30 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950">
-                <Flag className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-emerald-300">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Ruta terminada
-                </div>
-                <p className="mt-1 text-sm font-black text-white">Finaliza la jornada y realiza el arqueo</p>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500">Cuenta el efectivo, compara contra la caja esperada y registra el cierre con GPS.</p>
-              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950"><Flag className="h-5 w-5" /></div>
+              <div><div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" /> Ruta terminada</div><p className="mt-1 text-sm font-black text-white">Finaliza la jornada y realiza el arqueo</p><p className="mt-1 text-[11px] leading-5 text-slate-500">Cuenta el efectivo, compara contra la caja esperada y registra el cierre con GPS.</p></div>
             </div>
-            <button
-              onClick={() => router.push('/route/close')}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400"
-            >
-              <ClipboardCheck className="h-5 w-5" /> Finalizar ruta y hacer arqueo
-            </button>
+            <button onClick={() => router.push('/route/close')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400"><ClipboardCheck className="h-5 w-5" /> Finalizar ruta y hacer arqueo</button>
           </div>
         </div>
+      ) : (
+        <nav className="fixed bottom-3 left-1/2 z-[80] w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl print:hidden">
+          <div className="grid grid-cols-3 gap-1">
+            {nav.map(({ href, label, icon: Icon }) => {
+              const active = href === '/route' ? pathname === '/route' : pathname.startsWith(href);
+              return <button key={href} type="button" onClick={() => router.push(href)} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}><Icon className="h-4 w-4" />{label}</button>;
+            })}
+          </div>
+        </nav>
       )}
-
-      {pathname === '/route' && !routeFinished && (
-        <button
-          onClick={() => router.push('/route/close')}
-          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/95 px-4 py-3 text-[11px] font-black text-slate-300 shadow-xl backdrop-blur hover:border-emerald-400/30 hover:text-emerald-300"
-        >
-          <ClipboardCheck className="h-4 w-4" /> Cerrar jornada
-        </button>
-      )}
+      <div className="h-20 print:hidden" />
     </>
   );
 }
