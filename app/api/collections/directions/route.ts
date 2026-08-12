@@ -7,6 +7,35 @@ function validPoint(lat: number, lng: number) {
   return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 }
 
+function osrmInstruction(step: any) {
+  const type = String(step?.maneuver?.type || 'continue');
+  const modifier = String(step?.maneuver?.modifier || '').toLowerCase();
+  const road = String(step?.name || '').trim();
+  const roadText = road ? ` en ${road}` : '';
+
+  const dir = (() => {
+    if (modifier.includes('slight right')) return 'ligeramente a la derecha';
+    if (modifier.includes('sharp right')) return 'pronunciadamente a la derecha';
+    if (modifier.includes('right')) return 'a la derecha';
+    if (modifier.includes('slight left')) return 'ligeramente a la izquierda';
+    if (modifier.includes('sharp left')) return 'pronunciadamente a la izquierda';
+    if (modifier.includes('left')) return 'a la izquierda';
+    if (modifier.includes('uturn')) return 'en U';
+    return '';
+  })();
+
+  if (type === 'depart') return road ? `Inicia por ${road}` : 'Inicia la ruta';
+  if (type === 'arrive') return 'Has llegado a tu destino';
+  if (type === 'roundabout' || type === 'rotary') return `En la glorieta, toma la salida indicada${roadText}`;
+  if (type === 'merge') return `Incorpórate${dir ? ` ${dir}` : ''}${roadText}`;
+  if (type === 'fork') return `Mantente${dir ? ` ${dir}` : ''}${roadText}`;
+  if (type === 'on ramp' || type === 'off ramp') return `${type === 'on ramp' ? 'Toma la incorporación' : 'Toma la salida'}${dir ? ` ${dir}` : ''}${roadText}`;
+  if (type === 'turn') return `Gira${dir ? ` ${dir}` : ''}${roadText}`;
+  if (type === 'new name') return road ? `Continúa por ${road}` : 'Continúa';
+  if (type === 'end of road') return `Al final de la calle, gira${dir ? ` ${dir}` : ''}${roadText}`;
+  return road ? `Continúa por ${road}` : 'Continúa';
+}
+
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -69,7 +98,7 @@ export async function GET(req: NextRequest) {
     const route = osrm.routes[0];
     const coords = route?.geometry?.coordinates || [];
     const steps = (route?.legs || []).flatMap((leg: any) => (leg.steps || []).map((step: any) => ({
-      instruction: step?.name ? `${step?.maneuver?.type === 'turn' ? 'Gira' : 'Continúa'} por ${step.name}` : 'Continúa',
+      instruction: osrmInstruction(step),
       maneuver: step?.maneuver?.type || 'continue',
       modifier: step?.maneuver?.modifier || null,
       distanceMeters: Number(step?.distance || 0),
