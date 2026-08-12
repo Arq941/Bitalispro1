@@ -1,0 +1,66 @@
+name: Deploy MySQL Schema to Hostinger
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Escribe MIGRATE_BITALIS para confirmar la migración a Hostinger'
+        required: true
+        type: string
+
+jobs:
+  deploy-mysql-schema:
+    if: ${{ github.event.inputs.confirmation == 'MIGRATE_BITALIS' }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify database secret exists
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "HOSTINGER_DATABASE_URL no está configurado en GitHub Secrets."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL Prisma schema
+        run: node scripts/prepare-mysql-schema.js
+
+      - name: Validate MySQL schema
+        run: npx prisma validate --schema=prisma/schema.mysql.prisma
+
+      - name: Prepare initial migration
+        run: |
+          rm -rf prisma/migrations
+          mkdir -p prisma/migrations/20260811_initial_mysql
+          npx prisma migrate diff \
+            --from-empty \
+            --to-schema-datamodel prisma/schema.mysql.prisma \
+            --script > prisma/migrations/20260811_initial_mysql/migration.sql
+          test -s prisma/migrations/20260811_initial_mysql/migration.sql
+
+      - name: Show migration summary
+        run: |
+          echo "CREATE TABLE count: $(grep -c -i '^CREATE TABLE' prisma/migrations/20260811_initial_mysql/migration.sql || true)"
+          echo "ALTER TABLE count: $(grep -c -i '^ALTER TABLE' prisma/migrations/20260811_initial_mysql/migration.sql || true)"
+
+      - name: Deploy migration to Hostinger MySQL
+        run: npx prisma migrate deploy --schema=prisma/schema.mysql.prisma
+
+      - name: Verify migration status
+        run: npx prisma migrate status --schema=prisma/schema.mysql.prisma
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=prisma/schema.mysql.prisma
