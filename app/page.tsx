@@ -95,7 +95,7 @@ export default function ProductionLoginPage() {
             {online ? <Wifi className="h-3.5 w-3.5"/> : <WifiOff className="h-3.5 w-3.5"/>}
             {online ? 'Conectado' : 'Sin conexión'}
           </div>
-          <h1 className="mt-4 text-2xl font-black tracking-tight text-[#12224A]">Bienvenido a VITALIS</h1>
+          <h1 className="mt-4 text-2xl font-black tracking-tight text-[#12224A]">Bienvenido a BITALIS</h1>
           <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">Ventas, cobranza en ruta y operación de campo en una sola aplicación.</p>
         </div>
 
@@ -106,7 +106,7 @@ export default function ProductionLoginPage() {
             <span className="mb-2 block text-xs font-black text-[#12224A]">Correo o usuario</span>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="usuario@vitalis.mx" />
+              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="usuario@bitalis.mx" />
             </div>
           </label>
 
@@ -127,7 +127,7 @@ export default function ProductionLoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 border-t border-slate-100 pt-5 text-center text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">VITALIS · Operación segura</div>
+        <div className="mt-6 border-t border-slate-100 pt-5 text-center text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">BITALIS · Operación segura</div>
       </section>
     </main>
   );
