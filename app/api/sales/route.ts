@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SalesService } from '@/src/sales/sales.service';
 import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
 
+function statusFromError(err: any, fallback: number) {
+  const message = String(err?.message || '');
+  if (message.includes('UNAUTHORIZED')) return 401;
+  if (message.includes('FORBIDDEN')) return 403;
+  return fallback;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const userContext = getSalesUserContext(req);
@@ -12,19 +19,20 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || 'Error al crear la venta' },
-      { status: 400 }
+      { status: statusFromError(err, 400) }
     );
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    getSalesUserContext(req);
     const sales = await SalesService.getSalesList();
     return NextResponse.json({ sales }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || 'Error al obtener la lista de ventas' },
-      { status: 500 }
+      { status: statusFromError(err, 500) }
     );
   }
 }
