@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && next build",
-    "build:mysql": "node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma && next build",
+    "build": "node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma && next build",
+    "build:mysql": "npm run build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "tsc --noEmit",
     "prisma:generate": "prisma generate",
