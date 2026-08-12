@@ -1,0 +1,64 @@
+name: Hostinger SSH Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type CHECK_HOSTINGER_SSH"
+        required: true
+        default: ""
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+      SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+      SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+      APP_PATH: ${{ secrets.HOSTINGER_APP_PATH }}
+      SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "CHECK_HOSTINGER_SSH" ]; then
+            echo "Confirmation must be CHECK_HOSTINGER_SSH"
+            exit 1
+          fi
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -e
+          missing=0
+          for name in SSH_HOST SSH_PORT SSH_USER APP_PATH SSH_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Missing GitHub secret for $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/bitalis_hostinger_key
+          chmod 600 ~/.ssh/bitalis_hostinger_key
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Test Hostinger SSH and runtime
+        shell: bash
+        run: |
+          set -e
+          ssh -i ~/.ssh/bitalis_hostinger_key -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_USER@$SSH_HOST" \
+            "set -e; echo HOSTINGER_SSH_OK; echo USER=\$(whoami); echo HOME=\$HOME; command -v node >/dev/null && node --version || echo NODE_NOT_FOUND; command -v npm >/dev/null && npm --version || echo NPM_NOT_FOUND; mkdir -p '$APP_PATH'; test -d '$APP_PATH'; test -w '$APP_PATH'; echo APP_PATH_OK"
+
+      - name: Readiness summary
+        run: |
+          echo "HOSTINGER SSH READINESS: OK"
+          echo "Next step: deploy BITALIS production package."
