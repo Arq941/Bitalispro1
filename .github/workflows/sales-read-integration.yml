@@ -1,0 +1,80 @@
+name: Sales Read Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sales-read-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema
+        run: node scripts/generate-mysql-schema.js
+
+      - name: Generate Prisma Client for MySQL
+        run: npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Start Next.js server
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+
+      - name: Test authenticated sales list
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          function request(method, path, body, token) {
+            return new Promise((resolve, reject) => {
+              const payload = body ? JSON.stringify(body) : null;
+              const req = http.request({hostname:'127.0.0.1',port:3000,path,method,headers:{...(payload?{'content-type':'application/json','content-length':Buffer.byteLength(payload)}:{}),...(token?{authorization:`Bearer ${token}`}:{})}}, res => {
+                let data=''; res.on('data',c=>data+=c); res.on('end',()=>resolve({status:res.statusCode,body:data}));
+              });
+              req.on('error',reject); if(payload) req.write(payload); req.end();
+            });
+          }
+          (async()=>{
+            const email=process.env.ADMIN_EMAIL, password=process.env.ADMIN_PASSWORD;
+            if(!email||!password) throw new Error('BITALIS admin secrets are required');
+
+            const unauth=await request('GET','/api/sales');
+            if(unauth.status!==401) throw new Error(`Expected GET /api/sales without token = 401, got ${unauth.status}: ${unauth.body}`);
+
+            const login=await request('POST','/api/auth/login',{email,password});
+            if(login.status!==200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const j=JSON.parse(login.body);
+            const token=j.accessToken||j.token||j.data?.accessToken||j.data?.token;
+            if(!token) throw new Error(`No access token: ${login.body}`);
+
+            const sales=await request('GET','/api/sales',null,token);
+            if(sales.status!==200) throw new Error(`GET /api/sales HTTP ${sales.status}: ${sales.body}`);
+            const data=JSON.parse(sales.body);
+            if(!Array.isArray(data.sales)) throw new Error(`Expected sales array: ${sales.body}`);
+            console.log(`Authenticated sales list OK (${data.sales.length} sales)`);
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
