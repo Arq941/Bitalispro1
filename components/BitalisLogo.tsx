@@ -33,8 +33,8 @@ export default function BitalisLogo({
     return (
       <div className={`inline-flex shrink-0 items-center justify-center ${className}`}>
         <img
-          src="/vitalis-symbol.svg"
-          alt="Símbolo Vitalis"
+          src="/bitalis-symbol.svg"
+          alt="Símbolo BITALIS"
           className={`${iconDimensions} object-contain drop-shadow-sm transition-transform active:scale-95`}
           referrerPolicy="no-referrer"
         />
@@ -45,8 +45,8 @@ export default function BitalisLogo({
   return (
     <div className={`inline-flex select-none items-center ${className}`}>
       <img
-        src="/vitalis-logo.svg"
-        alt="VITALIS - Productos Naturistas"
+        src="/bitalis-logo.svg"
+        alt="BITALIS - Productos Naturistas"
         className={`${heightClass} w-auto object-contain drop-shadow-sm transition-transform duration-200 active:scale-[.98]`}
         referrerPolicy="no-referrer"
       />
