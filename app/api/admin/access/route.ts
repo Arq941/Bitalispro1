@@ -1,6 +1,7 @@
 import {NextRequest,NextResponse} from 'next/server';
 import {PrismaService} from '@/src/database/prisma.service';
 import {SecurityService} from '@/src/server/auth/security.service';
+import {PermissionService} from '@/src/server/auth/permission.service';
 import {getSalesUserContext} from '@/src/sales/sales-auth.helper';
 
 const prisma=PrismaService.getInstance();
@@ -15,7 +16,13 @@ export async function GET(req:NextRequest){
   prisma.role.findMany({include:{rolePermissions:{include:{permission:true}}},orderBy:{name:'asc'}}),
   prisma.permission.findMany({orderBy:{code:'asc'}}),
  ]);
- return NextResponse.json({users:users.map(u=>({...u,role:u.userRoles[0]?.role?.name||null})),roles:dbRoles.map(r=>({id:r.id,name:r.name,description:r.description,permissionCodes:r.rolePermissions.map(x=>x.permission.code)})),permissions});
+ const usersWithOverrides=await Promise.all(users.map(async u=>({
+  ...u,
+  role:u.userRoles[0]?.role?.name||null,
+  permissionOverrides:await PermissionService.getUserOverrides(u.id),
+  effectivePermissionCodes:await PermissionService.getEffectivePermissionCodes(u.id),
+ })));
+ return NextResponse.json({users:usersWithOverrides,roles:dbRoles.map(r=>({id:r.id,name:r.name,description:r.description,permissionCodes:r.rolePermissions.map(x=>x.permission.code)})),permissions});
  }catch(e:any){return NextResponse.json({error:e.message||'No se pudo cargar la seguridad.'},{status:codeFromError(e)});}
 }
 
@@ -46,6 +53,14 @@ export async function POST(req:NextRequest){
    const permissionRecords=[] as Array<{id:string}>;for(const code of permissionCodes){const p=await prisma.permission.upsert({where:{code},update:{},create:{code,description:code.replaceAll('.',' · ')}});permissionRecords.push(p);}
    await prisma.$transaction([prisma.rolePermission.deleteMany({where:{roleId:roleRecord.id}}),...permissionRecords.map(p=>prisma.rolePermission.create({data:{roleId:roleRecord.id,permissionId:p.id}})),prisma.user.updateMany({where:{userRoles:{some:{roleId:roleRecord.id}}},data:{permissionVersion:{increment:1}}})]);
    return NextResponse.json({success:true});
+  }
+  if(action==='setUserPermissionOverride'){
+   const userId=String(body.userId||''),permissionCode=String(body.permissionCode||''),effect=String(body.effect||'INHERIT') as 'ALLOW'|'DENY'|'INHERIT';
+   if(!userId||!permissionCode||!['ALLOW','DENY','INHERIT'].includes(effect))throw new Error('Override de permiso inválido.');
+   const target=await prisma.user.findUnique({where:{id:userId},select:{id:true}});if(!target)throw new Error('Usuario no encontrado.');
+   await prisma.permission.upsert({where:{code:permissionCode},update:{},create:{code:permissionCode,description:permissionCode.replaceAll('.',' · ')}});
+   await PermissionService.setUserOverride({userId,permissionCode,effect,updatedBy:admin.userId});
+   return NextResponse.json({success:true,effect});
   }
   throw new Error('Acción no soportada.');
  }catch(e:any){return NextResponse.json({error:e.message||'No se pudo guardar la configuración.'},{status:codeFromError(e)});}
