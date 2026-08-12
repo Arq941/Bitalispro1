@@ -1,0 +1,112 @@
+name: Seed Sales Integration Fixtures
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type SEED_SALES_FIXTURES to create marked test records in Hostinger MySQL'
+        required: true
+        type: string
+
+jobs:
+  seed-sales-fixtures:
+    if: ${{ inputs.confirmation == 'SEED_SALES_FIXTURES' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Create idempotent sales integration fixtures
+        run: |
+          node <<'NODE'
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+
+          (async () => {
+            const admin = await prisma.user.findUnique({ where: { email: process.env.ADMIN_EMAIL } });
+            if (!admin) throw new Error('Admin user not found; run production seed first');
+
+            const client = await prisma.client.upsert({
+              where: { clientNumber: 'CLI-TEST-SALES-0001' },
+              update: { status: 'PROSPECT', assignedSellerId: admin.id },
+              create: {
+                id: 'cli_test_sales_0001',
+                clientNumber: 'CLI-TEST-SALES-0001',
+                firstName: 'Cliente',
+                lastName: 'Prueba Ventas',
+                phone: '5500000001',
+                customerType: 'TEST',
+                status: 'PROSPECT',
+                riskLevel: 'LOW',
+                createdBy: admin.id,
+                assignedSellerId: admin.id,
+              },
+            });
+
+            const product = await prisma.product.upsert({
+              where: { sku: 'TEST-SALES-001' },
+              update: { status: 'ACTIVE' },
+              create: {
+                id: 'prod_test_sales_001',
+                sku: 'TEST-SALES-001',
+                name: 'Producto Prueba Integracion Ventas',
+                description: 'Registro de prueba controlado para validacion end-to-end de BITALIS',
+                brand: 'BITALIS TEST',
+                cost: 500,
+                costPrice: 500,
+                status: 'ACTIVE',
+                minStock: 0,
+                reorderPoint: 2,
+                maxStock: 100,
+              },
+            });
+
+            const warehouse = await prisma.warehouse.upsert({
+              where: { code: 'TEST-CENTRAL' },
+              update: { isActive: true },
+              create: {
+                id: 'wh_test_central',
+                name: 'Almacen Prueba Integracion',
+                code: 'TEST-CENTRAL',
+                type: 'CENTRAL',
+                isActive: true,
+              },
+            });
+
+            const stock = await prisma.inventoryStock.upsert({
+              where: { warehouseId_productId: { warehouseId: warehouse.id, productId: product.id } },
+              update: { quantityOnHand: 20, quantityReserved: 0, quantityAvailable: 20 },
+              create: {
+                id: 'stock_test_sales_001',
+                warehouseId: warehouse.id,
+                productId: product.id,
+                quantityOnHand: 20,
+                quantityReserved: 0,
+                quantityAvailable: 20,
+              },
+            });
+
+            console.log('SALES_FIXTURES_READY');
+            console.log({ client: client.clientNumber, product: product.sku, warehouse: warehouse.code, available: stock.quantityAvailable });
+          })()
+            .catch(err => { console.error(err); process.exitCode = 1; })
+            .finally(async () => { await prisma.$disconnect(); });
+          NODE
