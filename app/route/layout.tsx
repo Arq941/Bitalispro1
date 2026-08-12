@@ -6,6 +6,7 @@ import { ClipboardCheck, Flag, MapPinned, Navigation, Route, ShieldCheck } from 
 import RouteEvidenceDrawer from '@/components/route/RouteEvidenceDrawer';
 import RouteQuickActions from '@/components/route/RouteQuickActions';
 import ReceiptFlowEnhancer from '@/components/route/ReceiptFlowEnhancer';
+import RouteFieldMode from '@/components/route/RouteFieldMode';
 
 export default function RouteLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -43,6 +44,7 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
+      {showEvidence && !routeFinished && <RouteFieldMode />}
       {showEvidence && !routeFinished && <RouteEvidenceDrawer />}
       {showQuickActions && <RouteQuickActions />}
       {pathname === '/route' && <ReceiptFlowEnhancer />}
