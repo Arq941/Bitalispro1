@@ -1,243 +1,30 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  CirclePlus,
-  Loader2,
-  MapPin,
-  Pencil,
-  Phone,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  UserRound,
-  Users,
-  X,
-} from 'lucide-react';
-import BitalisLogo from '@/components/BitalisLogo';
+import {FormEvent,useEffect,useMemo,useState} from 'react';
+import {useRouter} from 'next/navigation';
+import {Camera,CheckCircle2,ChevronRight,FileCheck2,Home,Loader2,Phone,Search,ShieldCheck,UserRound,Users} from 'lucide-react';
+import AppShell from '@/components/phase15/AppShell';
+import {apiClient,newIdempotencyKey} from '@/lib/phase15/apiClient';
 
-type ClientRecord = {
-  id: string;
-  clientNumber: string;
-  firstName: string;
-  lastName: string;
-  secondLastName?: string | null;
-  phone: string;
-  secondaryPhone?: string | null;
-  email?: string | null;
-  occupation?: string | null;
-  customerType?: string | null;
-  status: string;
-  riskLevel: string;
-  latitude?: number | null;
-  longitude?: number | null;
-  zoneId?: string | null;
-  createdAt: string;
-};
+type Client={id:string;clientNumber:string;firstName:string;lastName:string;secondLastName?:string|null;phone?:string|null;status:string;riskLevel:string;customerType?:string|null;createdAt:string};
+type Role='VENDEDORA'|'SUPERVISORA'|'ADMIN'|'COBRADOR'|'';
+type Photos={facade:File|null;clientPhoto:File|null;contract:File|null};
+const emptyPhotos:Photos={facade:null,clientPhoto:null,contract:null};
 
-type FormState = {
-  firstName: string;
-  lastName: string;
-  secondLastName: string;
-  phone: string;
-  secondaryPhone: string;
-  email: string;
-  occupation: string;
-  customerType: string;
-  latitude: string;
-  longitude: string;
-};
-
-const emptyForm: FormState = {
-  firstName: '', lastName: '', secondLastName: '', phone: '', secondaryPhone: '', email: '', occupation: '', customerType: 'NEW', latitude: '', longitude: '',
-};
-
-function riskStyle(level: string) {
-  if (level === 'CRITICAL') return 'border-red-400/20 bg-red-500/10 text-red-300';
-  if (level === 'HIGH') return 'border-orange-400/20 bg-orange-500/10 text-orange-300';
-  if (level === 'MEDIUM') return 'border-amber-400/20 bg-amber-500/10 text-amber-300';
-  return 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300';
+async function compressImage(file:File){
+  if(!file.type.startsWith('image/'))return file;
+  const bitmap=await createImageBitmap(file);const max=1600,scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=canvas.getContext('2d');if(!ctx)return file;ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);const blob=await new Promise<Blob|null>(r=>canvas.toBlob(r,'image/jpeg',.78));bitmap.close();return blob?new File([blob],file.name.replace(/\.[^.]+$/,'.jpg'),{type:'image/jpeg'}):file;
 }
+function preview(file:File|null){return file?URL.createObjectURL(file):'';}
 
-function statusStyle(status: string) {
-  if (status === 'ACTIVE') return 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300';
-  if (status === 'BLOCKED' || status === 'SUSPENDED') return 'border-red-400/20 bg-red-500/10 text-red-300';
-  return 'border-slate-700 bg-slate-800 text-slate-300';
-}
-
-export default function ClientsPage() {
-  const router = useRouter();
-  const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState('');
-  const [searchDraft, setSearchDraft] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<ClientRecord | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
-
-  const getAuth = useCallback(() => {
-    const token = localStorage.getItem('bitalis_access_token');
-    const user = localStorage.getItem('bitalis_auth_user');
-    if (!token || !user) {
-      router.replace('/');
-      return null;
-    }
-    return token;
-  }, [router]);
-
-  const loadClients = useCallback(async () => {
-    const token = getAuth();
-    if (!token) return;
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams({ page: String(page), limit: '20' });
-      if (search) params.set('search', search);
-      const response = await fetch(`/api/clients?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
-      });
-      if (response.status === 401) {
-        localStorage.removeItem('bitalis_access_token');
-        localStorage.removeItem('bitalis_refresh_token');
-        localStorage.removeItem('bitalis_auth_user');
-        router.replace('/');
-        return;
-      }
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(json?.error || 'No fue posible cargar clientes.');
-      setClients(Array.isArray(json?.data) ? json.data : []);
-      setTotal(Number(json?.pagination?.total || 0));
-      setTotalPages(Math.max(1, Number(json?.pagination?.totalPages || 1)));
-    } catch (err: any) {
-      setError(err?.message || 'No fue posible cargar el CRM.');
-    } finally {
-      setLoading(false);
-    }
-  }, [getAuth, page, search, router]);
-
-  useEffect(() => { loadClients(); }, [loadClients]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm(emptyForm);
-    setModalOpen(true);
-  };
-
-  const openEdit = (client: ClientRecord) => {
-    setEditing(client);
-    setForm({
-      firstName: client.firstName || '', lastName: client.lastName || '', secondLastName: client.secondLastName || '', phone: client.phone || '', secondaryPhone: client.secondaryPhone || '', email: client.email || '', occupation: client.occupation || '', customerType: client.customerType || 'NEW', latitude: client.latitude == null ? '' : String(client.latitude), longitude: client.longitude == null ? '' : String(client.longitude),
-    });
-    setModalOpen(true);
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const token = getAuth();
-    if (!token) return;
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim()) {
-      setError('Nombre, apellido y teléfono son obligatorios.');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const payload: any = {
-        firstName: form.firstName.trim(), lastName: form.lastName.trim(), secondLastName: form.secondLastName.trim() || undefined, phone: form.phone.trim(), secondaryPhone: form.secondaryPhone.trim() || undefined, email: form.email.trim() || undefined, occupation: form.occupation.trim() || undefined, customerType: form.customerType || 'NEW',
-      };
-      if (form.latitude.trim()) payload.latitude = Number(form.latitude);
-      if (form.longitude.trim()) payload.longitude = Number(form.longitude);
-      if (!editing) payload.idempotencyKey = `crm-web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const response = await fetch(editing ? `/api/clients/${editing.id}` : '/api/clients', {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(json?.error || 'No fue posible guardar el cliente.');
-      setModalOpen(false);
-      if (!editing) setPage(1);
-      await loadClients();
-    } catch (err: any) {
-      setError(err?.message || 'No fue posible guardar el cliente.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const activeCount = useMemo(() => clients.filter((c) => c.status === 'ACTIVE').length, [clients]);
-  const highRiskCount = useMemo(() => clients.filter((c) => ['HIGH', 'CRITICAL'].includes(c.riskLevel)).length, [clients]);
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <BitalisLogo size="md" variant="dark" />
-            <div className="hidden border-l border-white/10 pl-3 sm:block">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">CRM Producción</p>
-              <p className="text-xs text-slate-400">Clientes · MySQL</p>
-            </div>
-          </div>
-          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> Panel
-          </button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-        <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[11px] font-bold text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" /> CRM conectado a producción</div>
-            <h1 className="text-2xl font-black text-white sm:text-3xl">Clientes</h1>
-            <p className="mt-2 text-sm text-slate-400">Alta, búsqueda y edición directa sobre MySQL.</p>
-          </div>
-          <button onClick={openCreate} className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/10 transition active:scale-[.98]"><CirclePlus className="h-4 w-4" /> Nuevo cliente</button>
-        </section>
-
-        {error && <div className="mt-5 flex items-start gap-3 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><span>{error}</span></div>}
-
-        <section className="mt-5 grid grid-cols-3 gap-3">
-          <article className="rounded-2xl border border-white/5 bg-slate-900/70 p-4"><p className="text-[10px] font-bold uppercase text-slate-500">Total CRM</p><p className="mt-1 text-2xl font-black text-white">{total}</p></article>
-          <article className="rounded-2xl border border-white/5 bg-slate-900/70 p-4"><p className="text-[10px] font-bold uppercase text-slate-500">Activos en página</p><p className="mt-1 text-2xl font-black text-emerald-300">{activeCount}</p></article>
-          <article className="rounded-2xl border border-white/5 bg-slate-900/70 p-4"><p className="text-[10px] font-bold uppercase text-slate-500">Riesgo alto</p><p className="mt-1 text-2xl font-black text-orange-300">{highRiskCount}</p></article>
-        </section>
-
-        <form onSubmit={(e) => { e.preventDefault(); setPage(1); setSearch(searchDraft.trim()); }} className="mt-5 flex gap-2 rounded-2xl border border-white/5 bg-slate-900/70 p-3">
-          <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" /><input value={searchDraft} onChange={(e) => setSearchDraft(e.target.value)} placeholder="Buscar por nombre, folio o teléfono" className="w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-3 text-sm text-white outline-none focus:border-emerald-500/50" /></div>
-          <button type="submit" className="rounded-xl bg-slate-800 px-4 text-xs font-black text-slate-200">Buscar</button>
-          <button type="button" onClick={loadClients} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
-        </form>
-
-        <section className="mt-4 overflow-hidden rounded-[24px] border border-white/5 bg-slate-900/70">
-          {loading ? <div className="flex items-center justify-center gap-2 px-5 py-14 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin" /> Cargando clientes...</div> : clients.length === 0 ? <div className="px-5 py-14 text-center text-sm text-slate-500">No encontramos clientes.</div> : <div className="divide-y divide-white/5">{clients.map((client) => (
-            <div key={client.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
-              <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-sm font-black text-slate-300"><UserRound className="h-5 w-5" /></div><div className="min-w-0"><p className="truncate text-sm font-black text-white">{client.firstName} {client.lastName} {client.secondLastName || ''}</p><p className="mt-1 truncate text-[11px] text-slate-500">{client.clientNumber} · {client.phone}</p><div className="mt-2 flex flex-wrap gap-1.5"><span className={`rounded-lg border px-2 py-1 text-[9px] font-black ${statusStyle(client.status)}`}>{client.status}</span><span className={`rounded-lg border px-2 py-1 text-[9px] font-black ${riskStyle(client.riskLevel)}`}>RIESGO {client.riskLevel}</span></div></div></div>
-              <div className="flex gap-2 sm:justify-end"><a href={`tel:${client.phone}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400"><Phone className="h-4 w-4" /></a>{client.latitude != null && client.longitude != null && <a href={`https://www.google.com/maps?q=${client.latitude},${client.longitude}`} target="_blank" rel="noreferrer" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400"><MapPin className="h-4 w-4" /></a>}<button onClick={() => openEdit(client)} className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 text-xs font-black text-emerald-300"><Pencil className="h-4 w-4" /> Editar</button></div>
-            </div>
-          ))}</div>}
-        </section>
-
-        <div className="mt-4 flex items-center justify-between gap-3"><p className="text-[11px] text-slate-600">Página {page} de {totalPages}</p><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-300 disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button><button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-300 disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button></div></div>
-      </main>
-
-      {modalOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-md sm:items-center sm:p-4" onClick={() => !saving && setModalOpen(false)}><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-[28px] border border-white/10 bg-slate-900 shadow-2xl sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}><div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-slate-900/95 px-5 py-4 backdrop-blur"><div><p className="text-base font-black text-white">{editing ? 'Editar cliente' : 'Nuevo cliente'}</p><p className="mt-1 text-[11px] text-slate-500">Los cambios se guardan directamente en MySQL.</p></div><button disabled={saving} onClick={() => setModalOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-slate-400"><X className="h-4 w-4" /></button></div><form onSubmit={submit} className="grid gap-4 p-5 sm:grid-cols-2">
-        {[['firstName','Nombre *'],['lastName','Apellido paterno *'],['secondLastName','Apellido materno'],['phone','Teléfono *'],['secondaryPhone','Teléfono secundario'],['email','Correo'],['occupation','Ocupación']].map(([key,label]) => <label key={key} className="block"><span className="mb-2 block text-xs font-bold text-slate-400">{label}</span><input type={key === 'email' ? 'email' : key.includes('phone') ? 'tel' : 'text'} value={(form as any)[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-emerald-500/50" /></label>)}
-        <label className="block"><span className="mb-2 block text-xs font-bold text-slate-400">Tipo de cliente</span><select value={form.customerType} onChange={(e) => setForm((f) => ({ ...f, customerType: e.target.value }))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-white"><option value="NEW">Nuevo</option><option value="RECURRENT">Recurrente</option><option value="REFERRED">Referido</option></select></label>
-        <label className="block"><span className="mb-2 block text-xs font-bold text-slate-400">Latitud</span><input inputMode="decimal" value={form.latitude} onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-white" /></label><label className="block"><span className="mb-2 block text-xs font-bold text-slate-400">Longitud</span><input inputMode="decimal" value={form.longitude} onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-white" /></label>
-        <div className="sm:col-span-2 flex justify-end gap-2 border-t border-white/5 pt-4"><button type="button" disabled={saving} onClick={() => setModalOpen(false)} className="rounded-xl border border-slate-700 px-4 py-3 text-xs font-black text-slate-300">Cancelar</button><button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-xs font-black text-slate-950 disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? 'Guardar cambios' : 'Crear cliente'}</button></div>
-      </form></div></div>}
-    </div>
-  );
-}
+export default function ClientsPage(){
+ const router=useRouter();const[role,setRole]=useState<Role>(''),[clients,setClients]=useState<Client[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState(''),[query,setQuery]=useState('');const[name,setName]=useState(''),[phone,setPhone]=useState(''),[photos,setPhotos]=useState<Photos>(emptyPhotos),[position,setPosition]=useState<{lat:number;lng:number}|null>(null);
+ useEffect(()=>{try{const raw=localStorage.getItem('bitalis_auth_user');const u=raw?JSON.parse(raw):null;setRole(String(u?.role||'').toUpperCase() as Role);}catch{}if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>setPosition({lat:p.coords.latitude,lng:p.coords.longitude}),()=>{}, {enableHighAccuracy:true,timeout:8000});},[]);
+ const load=async()=>{setLoading(true);setError('');try{const j:any=await apiClient('/api/clients?page=1&limit=100');setClients(j?.data||[]);}catch(e:any){setError(e.message);}finally{setLoading(false);}};useEffect(()=>{if(role)load();},[role]);
+ const filtered=useMemo(()=>clients.filter(c=>`${c.clientNumber} ${c.firstName} ${c.lastName} ${c.phone||''}`.toLowerCase().includes(query.toLowerCase())),[clients,query]);const pending=useMemo(()=>filtered.filter(c=>c.customerType==='PENDING_SUPERVISOR'||c.lastName==='PENDIENTE'),[filtered]);
+ const pick=async(key:keyof Photos,file?:File|null)=>{if(!file)return;try{const compact=await compressImage(file);setPhotos(p=>({...p,[key]:compact}));}catch{setPhotos(p=>({...p,[key]:file}));}};
+ const submit=async(e:FormEvent)=>{e.preventDefault();if(!name.trim()){setError('Ingresa el nombre del cliente.');return;}if(!photos.facade||!photos.clientPhoto||!photos.contract){setError('Debes tomar las tres fotografías: fachada, cliente y contrato.');return;}setSaving(true);setError('');setSuccess('');try{const fd=new FormData();fd.set('name',name.trim());fd.set('phone',phone.trim());fd.set('facade',photos.facade);fd.set('clientPhoto',photos.clientPhoto);fd.set('contract',photos.contract);fd.set('idempotencyKey',newIdempotencyKey('seller-client'));if(position){fd.set('latitude',String(position.lat));fd.set('longitude',String(position.lng));}const token=localStorage.getItem('bitalis_access_token');const res=await fetch('/api/clients/intake',{method:'POST',headers:token?{Authorization:`Bearer ${token}`}:{},body:fd});const j=await res.json().catch(()=>({}));if(!res.ok)throw new Error(j?.error||'No pudimos enviar el registro.');setName('');setPhone('');setPhotos(emptyPhotos);setSuccess(`Registro enviado a supervisión · ${j?.client?.clientNumber||''}`);await load();}catch(e:any){setError(e.message);}finally{setSaving(false);}};
+ return <AppShell title="Clientes"><main className="mx-auto max-w-6xl px-4 py-5"><section className="rounded-[28px] bg-[#12224A] p-5 text-white"><p className="text-[10px] font-black uppercase tracking-[.14em] text-[#C79A3B]">CRM en ruta</p><h1 className="mt-2 text-2xl font-black">{role==='VENDEDORA'?'Registro de cliente':role==='SUPERVISORA'?'Expedientes por completar':'Clientes'}</h1><p className="mt-2 text-sm text-slate-300">{role==='VENDEDORA'?'Captura rápida: nombre, teléfono opcional y tres evidencias. Supervisión completa el expediente.':role==='SUPERVISORA'?'Revisa las evidencias recibidas y completa los datos faltantes.':'Consulta expedientes y evidencias del cliente.'}</p></section>{error&&<div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}{success&&<div className="mt-4 flex gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700"><CheckCircle2 className="h-5 w-5"/>{success}</div>}
+ {role==='VENDEDORA'&&<form onSubmit={submit} className="mt-4 rounded-[28px] border border-slate-200 bg-white p-5"><label className="block"><span className="text-xs font-black text-slate-500">Nombre del cliente *</span><input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre completo" className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 outline-none focus:ring-2 focus:ring-[#FF6A00]"/></label><label className="mt-4 block"><span className="text-xs font-black text-slate-500">Teléfono <span className="font-medium text-slate-400">(opcional)</span></span><input inputMode="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Número telefónico" className="mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 outline-none focus:ring-2 focus:ring-[#FF6A00]"/></label><div className="mt-5 grid gap-3 sm:grid-cols-3"><PhotoCapture title="Fachada" icon={<Home/>} file={photos.facade} capture="environment" onPick={f=>pick('facade',f)}/><PhotoCapture title="Cliente" icon={<UserRound/>} file={photos.clientPhoto} capture="user" onPick={f=>pick('clientPhoto',f)}/><PhotoCapture title="Contrato" icon={<FileCheck2/>} file={photos.contract} capture="environment" onPick={f=>pick('contract',f)}/></div><p className="mt-4 text-xs leading-5 text-slate-500">Las tres fotografías son obligatorias. Se comprimen en el teléfono antes de enviarse para acelerar la carga.</p><button disabled={saving} className="mt-5 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF6A00] text-sm font-black text-white disabled:opacity-50">{saving?<Loader2 className="h-5 w-5 animate-spin"/>:<ShieldCheck className="h-5 w-5"/>}GUARDAR Y ENVIAR A SUPERVISIÓN</button></form>}
+ <section className="mt-5"><div className="relative"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar cliente, folio o teléfono" className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-[#FF6A00]"/></div>{role==='SUPERVISORA'&&pending.length>0&&<div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-black text-amber-800">{pending.length} expediente{pending.length===1?'':'s'} pendiente{pending.length===1?'':'s'} de completar</div>}{loading?<div className="flex justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-[#12224A]"/></div>:<div className="mt-3 space-y-3">{(role==='SUPERVISORA'?[...pending,...filtered.filter(c=>!pending.includes(c))]:filtered).map(c=>{const isPending=c.customerType==='PENDING_SUPERVISOR'||c.lastName==='PENDIENTE';return <article key={c.id} className={`rounded-3xl border bg-white p-4 shadow-sm ${isPending?'border-amber-200':'border-slate-200'}`}><div className="flex items-center gap-3"><div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${isPending?'bg-amber-50 text-amber-700':'bg-slate-100 text-[#12224A]'}`}><UserRound className="h-5 w-5"/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-black text-[#12224A]">{c.firstName} {c.lastName==='PENDIENTE'?'':c.lastName}</h2>{isPending&&<span className="rounded-full bg-amber-50 px-2 py-1 text-[9px] font-black text-amber-700">POR COMPLETAR</span>}</div><p className="mt-1 text-xs text-slate-500">{c.clientNumber}{c.phone?` · ${c.phone}`:' · Sin teléfono'}</p></div>{role==='SUPERVISORA'||role==='ADMIN'?<button onClick={()=>router.push(isPending?`/clients/${c.id}/complete`:`/clients/${c.id}`)} className="flex min-h-11 items-center gap-2 rounded-xl bg-[#12224A] px-3 text-xs font-black text-white">{isPending?'Completar':'Ver'}<ChevronRight className="h-4 w-4"/></button>:<button onClick={()=>router.push(`/clients/${c.id}`)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-[#12224A]" aria-label="Ver cliente"><ChevronRight className="h-4 w-4"/></button>}</div>{role==='COBRADOR'&&<div className="mt-3 flex gap-2"><button onClick={()=>router.push(`/clients/${c.id}`)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#FF6A00] text-xs font-black text-white"><Camera className="h-4 w-4"/>Ver expediente y fotos</button>{c.phone&&<a href={`tel:${c.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-black text-[#12224A]"><Phone className="h-4 w-4"/>Llamar</a>}</div>}</article>})}{!filtered.length&&<div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No hay clientes que coincidan.</div>}</div>}</section></main></AppShell>}
+function PhotoCapture({title,icon,file,capture,onPick}:{title:string;icon:React.ReactNode;file:File|null;capture:'user'|'environment';onPick:(f:File|null)=>void}){const src=useMemo(()=>preview(file),[file]);useEffect(()=>()=>{if(src)URL.revokeObjectURL(src);},[src]);return <label className="block cursor-pointer rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-3 text-center">{src?<img src={src} alt={title} className="h-36 w-full rounded-2xl object-cover"/>:<div className="flex h-36 flex-col items-center justify-center text-slate-400"><div className="mb-2 h-6 w-6">{icon}</div><Camera className="h-5 w-5"/></div>}<p className="mt-2 text-xs font-black text-[#12224A]">{file?'Cambiar foto':`Tomar foto · ${title}`}</p><input type="file" accept="image/*" capture={capture} className="hidden" onChange={e=>onPick(e.target.files?.[0]||null)}/></label>}
