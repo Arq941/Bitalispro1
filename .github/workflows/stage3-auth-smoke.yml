@@ -1,0 +1,46 @@
+name: Stage 3 Auth Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type VERIFY_BITALIS_AUTH to continue'
+        required: true
+        type: string
+
+jobs:
+  verify-admin-auth:
+    if: ${{ inputs.confirmation == 'VERIFY_BITALIS_AUTH' }}
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+          test -n "$ADMIN_EMAIL" || (echo 'BITALIS_ADMIN_EMAIL is missing' && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo 'BITALIS_ADMIN_PASSWORD is missing' && exit 1)
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema
+        run: node scripts/prepare-mysql-schema.js
+
+      - name: Generate Prisma Client for MySQL
+        run: npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Verify production admin authentication data
+        run: node scripts/verify-admin-login.js
