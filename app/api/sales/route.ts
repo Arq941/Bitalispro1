@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SalesService } from '@/src/sales/sales.service';
 import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 function statusFromError(err: any, fallback: number) {
   const message = String(err?.message || '');
@@ -12,19 +13,16 @@ function statusFromError(err: any, fallback: number) {
 export async function POST(req: NextRequest) {
   try {
     const userContext = getSalesUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'sales.create');
     const body = await req.json();
 
     const result = await SalesService.createSale(body, userContext);
 
-    // La supervisora también trabaja en campo y es autoridad de autorización.
-    // Si su propia venta cae en una política que normalmente requiere revisión
-    // (precio negociado o dos productos), se conserva todo el rastro de
-    // AuthorizationRequest y se aprueba mediante el flujo oficial del backend.
-    // La vendedora mantiene exactamente el flujo PENDING_AUTHORIZATION.
     if (
       result?.status === 'PENDING_AUTHORIZATION' &&
       (userContext.role === 'SUPERVISORA' || userContext.role === 'ADMIN')
     ) {
+      await PermissionService.requirePermission(userContext.userId, 'sales.approve');
       await SalesService.approveSale(
         result.id,
         userContext,
@@ -52,7 +50,8 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    getSalesUserContext(req);
+    const userContext = getSalesUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'sales.view');
     const sales = await SalesService.getSalesList();
     return NextResponse.json({ sales }, { status: 200 });
   } catch (err: any) {
