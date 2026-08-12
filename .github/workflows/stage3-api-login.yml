@@ -1,0 +1,110 @@
+name: Stage 3 API Login Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type VERIFY_BITALIS_API_LOGIN to continue'
+        required: true
+        type: string
+
+jobs:
+  api-login-integration:
+    if: ${{ inputs.confirmation == 'VERIFY_BITALIS_API_LOGIN' }}
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: stage3_ci_only_secret_2026_bitalis_do_not_use_in_production
+      JWT_EXPIRES_IN: 15m
+      PORT: 3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+          test -n "$ADMIN_EMAIL" || (echo 'BITALIS_ADMIN_EMAIL is missing' && exit 1)
+          test -n "$ADMIN_PASSWORD" || (echo 'BITALIS_ADMIN_PASSWORD is missing' && exit 1)
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Build Next.js with MySQL schema
+        run: npm run build:mysql
+
+      - name: Start Next.js server
+        shell: bash
+        run: |
+          npm start > /tmp/bitalis-next.log 2>&1 &
+          echo $! > /tmp/bitalis-next.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then
+              echo 'Next.js server is ready'
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          echo 'Next.js server did not become ready'
+          exit 1
+
+      - name: Test real login endpoint
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const http = require('http');
+
+          const payload = JSON.stringify({
+            email: process.env.ADMIN_EMAIL,
+            password: process.env.ADMIN_PASSWORD,
+          });
+
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port: 3000,
+            path: '/api/auth/login',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload),
+              'User-Agent': 'BITALIS-Stage3-CI'
+            }
+          }, (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+              let parsed;
+              try { parsed = JSON.parse(body); } catch { throw new Error(`Login returned non-JSON: ${body}`); }
+              if (res.statusCode !== 200) throw new Error(`Login HTTP ${res.statusCode}: ${body}`);
+              if (!parsed.success) throw new Error(`Login did not succeed: ${body}`);
+              if (!parsed.accessToken) throw new Error('accessToken missing');
+              if (!parsed.refreshToken) throw new Error('refreshToken missing');
+              if (!parsed.user || parsed.user.role !== 'ADMIN') throw new Error(`Expected ADMIN profile: ${body}`);
+              if (String(parsed.user.email).toLowerCase() !== String(process.env.ADMIN_EMAIL).toLowerCase()) throw new Error('Returned user email mismatch');
+              console.log('BITALIS API login integration PASSED');
+              console.log({ status: res.statusCode, role: parsed.user.role, email: parsed.user.email, accessToken: true, refreshToken: true });
+            });
+          });
+          req.on('error', err => { throw err; });
+          req.write(payload);
+          req.end();
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
