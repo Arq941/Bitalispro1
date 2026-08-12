@@ -30,7 +30,7 @@ BITALIS continúa sobre la arquitectura productiva existente **Next.js 15 + Reac
 - `components/phase15/AppShell.tsx` — navegación mobile-first por rol.
 - `components/phase15/PWAProvider.tsx` — registro SW, estado online y aviso de nueva versión.
 - `components/phase15/SyncManager.tsx` — sincronización de operaciones IndexedDB.
-- `lib/phase15/apiClient.ts` — capa central con JWT legado, timeout, retry controlado, errores normalizados e idempotencia.
+- `lib/phase15/apiClient.ts` — capa central con JWT legado, timeout, retry controlado, refresh, errores normalizados e idempotencia.
 - `lib/phase15/offlineQueue.ts` — cola IndexedDB `QUEUED/SYNCING/SYNCED/FAILED`.
 
 ## PWA
@@ -48,10 +48,10 @@ No se modificaron fórmulas, Kardex, caja, crédito ni RBAC/ABAC. La regla crít
 
 ## UX por rol
 - COBRADOR: Inicio, Ruta, Cobrar, Clientes, Más.
-- VENDEDOR: Inicio, Venta, Clientes, Productos, Más.
-- SUPERVISOR: Inicio, Autorizar, Ruta, Alertas, Más.
+- VENDEDORA: Inicio, Venta, Clientes, Productos, Más.
+- SUPERVISORA: Inicio, Autorizar, Ruta, Alertas, Más.
 - ADMIN: Inicio, Centro de control, Caja, Inventario, Más.
-La autorización server-side se mantiene; ocultar opciones en UI no sustituye permisos backend.
+La autorización server-side se mantiene; ocultar opciones en UI no sustituye permisos backend. La UI conserva aliases `VENDEDOR`/`SUPERVISOR` únicamente para compatibilidad con sesiones antiguas, pero el esquema productivo usa `VENDEDORA`/`SUPERVISORA`.
 
 ## Responsive y accesibilidad
 Diseño mobile-first sin tablas obligatorias en pantallas nuevas; cards adaptativas para 360–1440 px. Focus visible, labels, botones de al menos ~44–48 px y compatibilidad con `prefers-reduced-motion`.
@@ -68,8 +68,15 @@ Se conservan App Router/code splitting por ruta, carga dinámica de mapas y cach
 - `/collections` era un placeholder genérico: reemplazado por flujo de cobranza móvil.
 - Faltaban rutas explícitas `/login`, `/sales/new`, `/clients/:id`, `/authorizations`, `/control-center`, `/reports`, `/audit`, `/settings`: agregadas.
 - Fetch disperso: nueva capa central disponible para migración gradual de pantallas existentes.
+- Roles de Phase 15 inicialmente usaban nombres incompatibles `VENDEDOR`/`SUPERVISOR`; se alinearon con `VENDEDORA`/`SUPERVISORA` manteniendo aliases de compatibilidad.
+- Auditoría intentaba leer `User.role` directamente; se corrigió para resolver `userRoles -> role` según Prisma.
+- Autorizaciones se alinearon con los campos reales de `AuthorizationRequest`.
+
+## Estabilización CI / Prisma
+El workflow `MySQL Prisma Schema Check` genera `prisma/schema.mysql.prisma` desde el esquema canónico, cambia exclusivamente el provider a MySQL y luego ejecuta formato, `prisma validate`, generación de Prisma Client, `tsc --noEmit` y `build:mysql`. Los fallos históricos de commits intermedios no se consideran resueltos por separado; la condición de avance es que el **HEAD actual** vuelva a pasar el workflow completo. Este commit se usa como checkpoint limpio después de corregir relaciones y nombres de roles.
 
 ## Pendiente antes de marcar Fase 15 al 100%
+- Confirmar en GitHub Actions que el checkpoint actual pase `MySQL Prisma Schema Check` completo.
 - Migrar todos los fetch heredados restantes a `apiClient`.
 - Migrar token histórico de localStorage a cookie HttpOnly/SameSite sin romper producción.
 - Validar build/deploy Hostinger de todos los nuevos módulos.
