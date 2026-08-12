@@ -1,0 +1,141 @@
+name: Sales Create Integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type CREATE_TEST_SALE to create one integration sale in production'
+        required: true
+        type: string
+
+jobs:
+  sales-create-integration:
+    if: ${{ inputs.confirmation == 'CREATE_TEST_SALE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      ADMIN_EMAIL: ${{ secrets.BITALIS_ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.BITALIS_ADMIN_PASSWORD }}
+      JWT_SECRET: bitalis_stage3_sales_ci_secret_2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema and Prisma Client
+        run: |
+          node scripts/prepare-mysql-schema.js
+          npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Start Next.js server
+        run: |
+          npm run dev > /tmp/bitalis-next.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/bitalis-next.log
+          exit 1
+
+      - name: Create and verify one real test sale
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+
+          function request(method, path, body, token) {
+            return new Promise((resolve, reject) => {
+              const payload = body ? JSON.stringify(body) : null;
+              const req = http.request({
+                hostname:'127.0.0.1', port:3000, path, method,
+                headers:{
+                  ...(payload?{'content-type':'application/json','content-length':Buffer.byteLength(payload)}:{}),
+                  ...(token?{authorization:`Bearer ${token}`}:{})
+                }
+              }, res => {
+                let data=''; res.on('data',c=>data+=c); res.on('end',()=>resolve({status:res.statusCode,body:data}));
+              });
+              req.on('error',reject); if(payload) req.write(payload); req.end();
+            });
+          }
+
+          (async()=>{
+            const email=process.env.ADMIN_EMAIL, password=process.env.ADMIN_PASSWORD;
+            if(!email||!password) throw new Error('BITALIS admin secrets are required');
+
+            const client = await prisma.client.findFirst({ where:{ status:{in:['PROSPECT','ACTIVE']} }, orderBy:{createdAt:'desc'} });
+            const product = await prisma.product.findFirst({ where:{ status:'ACTIVE' }, orderBy:{createdAt:'desc'} });
+            const warehouse = await prisma.warehouse.findFirst({ where:{ isActive:true }, orderBy:{createdAt:'asc'} });
+            if(!client||!product||!warehouse) throw new Error('Missing client/product/warehouse prerequisites');
+
+            const before = await prisma.inventoryStock.findUnique({
+              where:{ warehouseId_productId:{warehouseId:warehouse.id,productId:product.id} }
+            });
+            if(!before || before.quantityAvailable < 1) throw new Error('No available stock for selected product');
+
+            const login=await request('POST','/api/auth/login',{email,password});
+            if(login.status!==200) throw new Error(`Login HTTP ${login.status}: ${login.body}`);
+            const lj=JSON.parse(login.body);
+            const token=lj.accessToken||lj.token||lj.data?.accessToken||lj.data?.token;
+            if(!token) throw new Error(`No access token: ${login.body}`);
+
+            const unique = `ci-${Date.now()}`;
+            const payload={
+              clientId:client.id,
+              warehouseId:warehouse.id,
+              saleType:'CASH',
+              items:[{
+                productId:product.id,
+                quantity:1,
+                unitPrice:1000,
+                negotiatedPrice:1000,
+                minimumAuthorizedPrice:1000
+              }],
+              engancheCliente:0,
+              idempotencyKey:unique
+            };
+
+            const created=await request('POST','/api/sales',payload,token);
+            if(created.status!==201) throw new Error(`POST /api/sales HTTP ${created.status}: ${created.body}`);
+            const cj=JSON.parse(created.body);
+            const saleId=cj.id||cj.sale?.id||cj.data?.id||cj.data?.sale?.id;
+            if(!saleId) throw new Error(`Created sale response missing id: ${created.body}`);
+
+            const persisted=await prisma.sale.findUnique({ where:{id:saleId}, include:{items:true} });
+            if(!persisted) throw new Error(`Sale ${saleId} was not persisted in MySQL`);
+            if(persisted.clientId!==client.id) throw new Error('Persisted sale client mismatch');
+            if(!persisted.items || persisted.items.length!==1) throw new Error('Persisted sale items mismatch');
+
+            const after = await prisma.inventoryStock.findUnique({
+              where:{ warehouseId_productId:{warehouseId:warehouse.id,productId:product.id} }
+            });
+            if(!after) throw new Error('Inventory stock disappeared after sale');
+            if(after.quantityReserved < before.quantityReserved + 1 && after.quantityAvailable >= before.quantityAvailable) {
+              throw new Error(`Inventory reservation was not reflected. Before=${JSON.stringify(before)} After=${JSON.stringify(after)}`);
+            }
+
+            console.log('SALES CREATE INTEGRATION PASSED', {
+              saleId,
+              saleNumber:persisted.saleNumber,
+              clientId:client.id,
+              productId:product.id,
+              warehouseId:warehouse.id,
+              stockBefore:{reserved:before.quantityReserved,available:before.quantityAvailable},
+              stockAfter:{reserved:after.quantityReserved,available:after.quantityAvailable}
+            });
+          })().finally(()=>prisma.$disconnect()).catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/bitalis-next.log || true
