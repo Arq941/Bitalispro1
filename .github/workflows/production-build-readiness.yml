@@ -1,0 +1,39 @@
+name: Production Build Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  production-build-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate MySQL Prisma schema
+        run: npm run prisma:mysql:validate
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Build Next.js for MySQL production
+        run: npm run build:mysql
+
+      - name: Verify production build output
+        run: |
+          test -d .next || (echo '.next directory missing' && exit 1)
+          test -f .next/BUILD_ID || (echo '.next/BUILD_ID missing' && exit 1)
+          echo "PRODUCTION_BUILD_READY $(cat .next/BUILD_ID)"
