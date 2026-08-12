@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { SecurityService } from '@/src/server/auth/security.service';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 function mexicoTodayRange() {
   const now = new Date();
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
     if (!verified?.sub || !verified?.role) {
       return NextResponse.json({ success: false, error: 'UNAUTHORIZED: Token inválido o expirado.' }, { status: 401 });
     }
+
+    await PermissionService.requirePermission(verified.sub, 'collections.view');
 
     const prisma = PrismaService.getInstance();
     const { start, end, mexicoDate } = mexicoTodayRange();
@@ -115,7 +118,6 @@ export async function GET(req: NextRequest) {
       .filter(c => c.collection.overdue || c.collection.dueToday || c.collection.preferredToday)
       .sort((a, b) => b.collection.priorityScore - a.collection.priorityScore || Number(b.saldoActual) - Number(a.saldoActual));
 
-    // Fallback controlado: si aún no existen fechas/días configurados, no dejamos la ruta vacía.
     const data = todays.length ? todays : mapped
       .sort((a, b) => b.collection.priorityScore - a.collection.priorityScore || Number(b.saldoActual) - Number(a.saldoActual));
 
@@ -128,6 +130,8 @@ export async function GET(req: NextRequest) {
       data,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err?.message || 'Error al obtener cartera de cobranza.' }, { status: 500 });
+    const message = err?.message || 'Error al obtener cartera de cobranza.';
+    const status = message.includes('FORBIDDEN') ? 403 : message.includes('UNAUTHORIZED') ? 401 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }
