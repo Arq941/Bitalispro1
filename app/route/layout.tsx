@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ClipboardCheck, Flag, MapPinned, Route, ShieldCheck } from 'lucide-react';
+import { ClipboardCheck, Flag, MapPinned, Navigation, Route, ShieldCheck } from 'lucide-react';
 
 export default function RouteLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -29,6 +29,7 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
 
   const nav = [
     { href: '/route', label: 'Cobranza', icon: Route },
+    { href: '/route/navigate', label: 'Navegar', icon: Navigation },
     { href: '/route/map', label: 'Mapa', icon: MapPinned },
     { href: '/route/close', label: 'Cierre', icon: ClipboardCheck },
   ];
@@ -48,11 +49,11 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : (
-        <nav className="fixed bottom-3 left-1/2 z-[80] w-[calc(100%-24px)] max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl print:hidden">
-          <div className="grid grid-cols-3 gap-1">
+        <nav className="fixed bottom-3 left-1/2 z-[80] w-[calc(100%-24px)] max-w-lg -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl print:hidden">
+          <div className="grid grid-cols-4 gap-1">
             {nav.map(({ href, label, icon: Icon }) => {
               const active = href === '/route' ? pathname === '/route' : pathname.startsWith(href);
-              return <button key={href} type="button" onClick={() => router.push(href)} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}><Icon className="h-4 w-4" />{label}</button>;
+              return <button key={href} type="button" onClick={() => router.push(href)} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-black transition sm:flex-row sm:gap-2 sm:text-xs ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}><Icon className="h-4 w-4" />{label}</button>;
             })}
           </div>
         </nav>
