@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ClipboardCheck, Flag, MapPinned, Navigation, Route, ShieldCheck } from 'lucide-react';
+import RouteEvidenceDrawer from '@/components/route/RouteEvidenceDrawer';
 
 export default function RouteLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -34,9 +35,12 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
     { href: '/route/close', label: 'Cierre', icon: ClipboardCheck },
   ];
 
+  const showEvidence = pathname === '/route' || pathname === '/route/navigate' || pathname === '/route/map';
+
   return (
     <>
       {children}
+      {showEvidence && !routeFinished && <RouteEvidenceDrawer />}
 
       {pathname === '/route' && routeFinished ? (
         <div className="fixed inset-x-0 bottom-0 z-[90] border-t border-emerald-400/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
