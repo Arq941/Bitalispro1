@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
+import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId') || searchParams.get('collectorId');
+    const userContext = getSalesUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'cash.view');
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId or collectorId query parameter is required' }, { status: 400 });
-    }
+    const { searchParams } = new URL(req.url);
+    const requestedUserId = searchParams.get('userId') || searchParams.get('collectorId');
+    const canInspectOthers = userContext.role === 'ADMIN' || userContext.role === 'SUPERVISORA';
+    const userId = canInspectOthers && requestedUserId ? requestedUserId : userContext.userId;
 
     const session = await CashService.getCurrentSession(userId);
 
@@ -18,6 +21,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, data: session }, { status: 200 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch current cash session' }, { status: 400 });
+    const message = error?.message || 'No se pudo consultar la caja.';
+    const status = message.includes('UNAUTHORIZED') ? 401 : message.includes('FORBIDDEN') ? 403 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
