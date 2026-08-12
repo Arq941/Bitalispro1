@@ -2,7 +2,7 @@
 
 import { Camera, CalendarClock, Navigation, WalletCards, XCircle, Clock3, X, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 function buttons() {
   return Array.from(document.querySelectorAll('button')) as HTMLButtonElement[];
@@ -42,11 +42,29 @@ function parseSaldoActual(text: string) {
   return Number.isFinite(value) ? value : null;
 }
 
+const AUTO_NAV_KEY = 'bitalis_route_auto_nav_after_visit';
+
 export default function RouteQuickActions() {
   const router = useRouter();
   const [panel, setPanel] = useState<'none' | 'noPay' | 'reschedule'>('none');
   const [reason, setReason] = useState('NO_TENIA_DINERO');
   const [date, setDate] = useState('');
+
+  useEffect(() => {
+    const checkAdvance = () => {
+      if (sessionStorage.getItem(AUTO_NAV_KEY) !== '1') return;
+      const text = document.body?.innerText || '';
+      const success = text.includes('Visita registrada. Siguiente destino') || text.includes('Cliente reagendado. Siguiente destino');
+      if (!success) return;
+      sessionStorage.removeItem(AUTO_NAV_KEY);
+      window.setTimeout(() => router.push('/route/navigate'), 450);
+    };
+
+    const observer = new MutationObserver(checkAdvance);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    checkAdvance();
+    return () => observer.disconnect();
+  }, [router]);
 
   const openPhotos = () => {
     const target = buttons().find((b) =>
@@ -93,8 +111,10 @@ export default function RouteQuickActions() {
   const submitNoPay = () => {
     const select = document.querySelector('select') as HTMLSelectElement | null;
     if (select) setNativeValue(select, reason);
+    sessionStorage.setItem(AUTO_NAV_KEY, '1');
     window.setTimeout(() => {
-      clickButton('No pagó');
+      const clicked = clickButton('No pagó');
+      if (!clicked) sessionStorage.removeItem(AUTO_NAV_KEY);
       setPanel('none');
     }, 50);
   };
@@ -108,8 +128,10 @@ export default function RouteQuickActions() {
     );
     if (input) setNativeValue(input, date);
     if (reasonSelect) setNativeValue(reasonSelect, 'PROMESA_PAGO');
+    sessionStorage.setItem(AUTO_NAV_KEY, '1');
     window.setTimeout(() => {
-      clickButton('Reagendar');
+      const clicked = clickButton('Reagendar');
+      if (!clicked) sessionStorage.removeItem(AUTO_NAV_KEY);
       setPanel('none');
     }, 80);
   };
