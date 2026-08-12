@@ -133,6 +133,35 @@ export class PaymentService {
         });
       }
 
+      const collectionRule = await tx.commissionRule.findFirst({
+        where: {
+          active: true,
+          role: 'COBRADOR',
+          ruleType: 'COLLECTION',
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (collectionRule) {
+        const commissionAmount = amount.mul(new Decimal(collectionRule.rate));
+        await tx.commission.create({
+          data: {
+            employeeId: dto.collectorId,
+            role: 'COBRADOR',
+            commissionType: 'COLLECTION_COMMISSION',
+            paymentId: payment.id,
+            creditId: dto.creditId,
+            baseAmount: amount,
+            rate: collectionRule.rate,
+            commissionAmount,
+            status: 'CALCULATED',
+            sourceEvent: 'PAYMENT_VERIFIED',
+            idempotencyKey: `${dto.idempotencyKey}-commission`,
+            createdBy: dto.collectorId,
+          },
+        });
+      }
+
       await tx.auditLog.create({
         data: {
           userId: dto.collectorId,
