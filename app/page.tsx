@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 
 export default function ProductionLoginPage() {
@@ -12,8 +12,15 @@ export default function ProductionLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
+    setOnline(navigator.onLine);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
     const removeLegacyPwa = async () => {
       try {
         if ('serviceWorker' in navigator) {
@@ -24,22 +31,7 @@ export default function ProductionLoginPage() {
           const keys = await caches.keys();
           await Promise.all(keys.map((key) => caches.delete(key)));
         }
-
-        const legacyKeys = [
-          'pwa_session_user',
-          'pwa_session_tab',
-          'pwa_clientes',
-          'pwa_ventas',
-          'pwa_abonos',
-          'pwa_cortes',
-          'pwa_productos',
-          'pwa_zonas',
-          'pwa_usuarios',
-          'pwa_audit_logs',
-          'pwa_clean_db_v2',
-          'bitalis_guide_disabled',
-        ];
-        legacyKeys.forEach((key) => localStorage.removeItem(key));
+        ['pwa_session_user','pwa_session_tab','pwa_clientes','pwa_ventas','pwa_abonos','pwa_cortes','pwa_productos','pwa_zonas','pwa_usuarios','pwa_audit_logs','pwa_clean_db_v2','bitalis_guide_disabled'].forEach((key) => localStorage.removeItem(key));
       } catch (cleanupError) {
         console.warn('No fue posible limpiar completamente el caché legacy:', cleanupError);
       }
@@ -50,18 +42,22 @@ export default function ProductionLoginPage() {
       const user = localStorage.getItem('bitalis_auth_user');
       if (token && user) router.replace('/dashboard');
     });
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
   }, [router]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!email.trim() || !password) {
-      setError('Ingresa correo y contraseña.');
-      return;
-    }
+    if (!online) { setError('Sin conexión. Conéctate a internet para iniciar sesión.'); return; }
+    if (!email.trim() || !password) { setError('Ingresa correo y contraseña.'); return; }
 
     setLoading(true);
     setError('');
     try {
+      navigator.vibrate?.(18);
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -69,18 +65,20 @@ export default function ProductionLoginPage() {
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(json?.error || json?.message || 'Credenciales inválidas.');
+      if (!response.ok) throw new Error(json?.error || json?.message || 'Credenciales inválidas o cuenta inaccesible.');
 
       const accessToken = json?.accessToken || json?.access_token || json?.tokens?.accessToken;
       const refreshToken = json?.refreshToken || json?.refresh_token || json?.tokens?.refreshToken;
       const user = json?.user;
-      if (!accessToken || !user) throw new Error('La sesión no devolvió los datos esperados.');
+      if (!accessToken || !user) throw new Error('No pudimos iniciar la sesión. Intenta nuevamente.');
 
       localStorage.setItem('bitalis_access_token', accessToken);
       if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
+      navigator.vibrate?.([24, 30, 24]);
       router.replace('/dashboard');
     } catch (err: any) {
+      navigator.vibrate?.(55);
       setError(err?.message || 'No fue posible iniciar sesión.');
     } finally {
       setLoading(false);
@@ -88,47 +86,48 @@ export default function ProductionLoginPage() {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-slate-100">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.12),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.08),transparent_30%)]" />
-      <section className="relative w-full max-w-md overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/90 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-8">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <BitalisLogo size="lg" variant="dark" />
-          <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300">
-            <ShieldCheck className="h-3.5 w-3.5" /> Producción segura
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#F3F4F6] px-4 py-6 text-[#2B2B2B] sm:py-10">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-gradient-to-b from-[#00A86B]/10 to-transparent" />
+      <section className="relative w-full max-w-[430px] overflow-hidden rounded-[32px] border border-white bg-white p-5 shadow-[0_24px_70px_rgba(18,34,74,.13)] sm:p-8">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <BitalisLogo size="lg" />
+          <div className={`mt-5 inline-flex min-h-8 items-center gap-2 rounded-full px-3 text-[10px] font-black uppercase tracking-[.14em] ${online?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>
+            {online ? <Wifi className="h-3.5 w-3.5"/> : <WifiOff className="h-3.5 w-3.5"/>}
+            {online ? 'Conectado' : 'Sin conexión'}
           </div>
-          <h1 className="mt-4 text-2xl font-black tracking-tight text-white">Acceso BITALIS</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Sistema operativo conectado a MySQL mediante Prisma y autenticación JWT.</p>
+          <h1 className="mt-4 text-2xl font-black tracking-tight text-[#12224A]">Bienvenido a VITALIS</h1>
+          <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">Ventas, cobranza en ruta y operación de campo en una sola aplicación.</p>
         </div>
 
-        {error && <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-3 text-xs font-semibold text-red-200">{error}</div>}
+        {error && <div role="alert" className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-xs font-bold leading-5 text-red-700">{error}</div>}
 
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
-            <span className="mb-2 block text-xs font-bold text-slate-300">Correo electrónico</span>
+            <span className="mb-2 block text-xs font-black text-[#12224A]">Correo o usuario</span>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
-              <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-2xl border border-slate-800 bg-slate-950 py-3.5 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500/50" placeholder="usuario@bitalis.mx" />
+              <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="usuario@vitalis.mx" />
             </div>
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-xs font-bold text-slate-300">Contraseña</span>
+            <span className="mb-2 block text-xs font-black text-[#12224A]">Contraseña</span>
             <div className="relative">
-              <LockKeyhole className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
-              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-2xl border border-slate-800 bg-slate-950 py-3.5 pl-10 pr-11 text-sm text-white outline-none transition focus:border-emerald-500/50" placeholder="••••••••" />
-              <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-600 hover:text-slate-300" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <LockKeyhole className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-14 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="••••••••" />
+              <button type="button" onClick={() => { navigator.vibrate?.(10); setShowPassword((value) => !value); }} className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 active:scale-90" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </div>
           </label>
 
-          <button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3.5 text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/10 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            {loading ? 'Ingresando...' : 'Ingresar'}
+          <button type="submit" disabled={loading || !online} className="mt-2 flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl bg-[#00A86B] px-4 text-sm font-black text-white shadow-lg shadow-emerald-700/10 transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50">
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ShieldCheck className="h-5 w-5" />}
+            {loading ? 'INGRESANDO…' : 'INICIAR SESIÓN'}
           </button>
         </form>
 
-        <div className="mt-6 border-t border-white/5 pt-5 text-center text-[10px] text-slate-600">BITALIS · MySQL · Prisma · JWT</div>
+        <div className="mt-6 border-t border-slate-100 pt-5 text-center text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">VITALIS · Operación segura</div>
       </section>
     </main>
   );
