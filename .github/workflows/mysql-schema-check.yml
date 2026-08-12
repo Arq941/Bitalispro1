@@ -10,6 +10,9 @@ on:
 jobs:
   prisma-mysql-check:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
+      NEXT_TELEMETRY_DISABLED: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,11 +46,13 @@ jobs:
         run: npx prisma format --schema=prisma/schema.mysql.prisma
 
       - name: Validate MySQL Prisma schema
-        env:
-          DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
         run: npx prisma validate --schema=prisma/schema.mysql.prisma
 
       - name: Generate Prisma Client for MySQL
-        env:
-          DATABASE_URL: mysql://user:password@localhost:3306/bitalis_validation
         run: npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Build Next.js for MySQL
+        run: npm run build:mysql
