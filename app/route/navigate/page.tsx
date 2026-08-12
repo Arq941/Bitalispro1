@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, Crosshair, Loader2, MapPinned, Navigation, RefreshCw, Route, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock3, Crosshair, Gauge, Loader2, MapPinned, Navigation, RefreshCw, Route, Users, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 
 const RoadNavigationMap = dynamic(() => import('@/components/RoadNavigationMap'), { ssr: false });
@@ -13,7 +13,7 @@ type Client = { id:string; clientNumber:string; firstName:string; lastName:strin
 type Credit = { id:string; saldoActual:number; client:Client };
 type Step = { instruction:string; maneuver?:string; modifier?:string|null; distanceMeters:number; durationSeconds:number; start?:Position|null; end?:Position|null };
 type Directions = { distanceMeters:number; durationSeconds:number; geometry:Position[]; steps:Step[] };
-type SavedProgress = { planIds?:string[]; completed?:string[]; selectedId?:string };
+type SavedProgress = { planIds?:string[]; completed?:string[]; selectedId?:string; startedAt?:string };
 
 const todayMx=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const routeKey=(uid:string)=>`bitalis_route_progress_${uid}_${todayMx()}`;
@@ -21,6 +21,7 @@ const toRad=(v:number)=>(v*Math.PI)/180;
 function distanceMeters(a:Position,b:Position){const R=6371000,dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);const x=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
 function fmtDistance(m:number){return m<1000?`${Math.round(m)} m`:`${(m/1000).toFixed(1)} km`;}
 function fmtDuration(s:number){const min=Math.max(1,Math.round(s/60));return min<60?`${min} min`:`${Math.floor(min/60)} h ${min%60} min`;}
+function fmtClock(date:Date){return new Intl.DateTimeFormat('es-MX',{hour:'numeric',minute:'2-digit'}).format(date);}
 function nearestDistanceToGeometry(position:Position, geometry:Position[]){if(!geometry.length)return Infinity;let best=Infinity;for(let i=0;i<geometry.length;i+=Math.max(1,Math.floor(geometry.length/250))){best=Math.min(best,distanceMeters(position,geometry[i]));}return best;}
 
 export default function NavigatePage(){
@@ -30,6 +31,7 @@ export default function NavigatePage(){
   const [planIds,setPlanIds]=useState<string[]>([]);
   const [completed,setCompleted]=useState<string[]>([]);
   const [selectedId,setSelectedId]=useState('');
+  const [startedAt,setStartedAt]=useState<string>('');
   const [directions,setDirections]=useState<Directions|null>(null);
   const [provider,setProvider]=useState('');
   const [loading,setLoading]=useState(true);
@@ -38,93 +40,37 @@ export default function NavigatePage(){
   const [follow,setFollow]=useState(true);
   const [voice,setVoice]=useState(true);
   const [offRoute,setOffRoute]=useState(false);
-  const arrivalReads=useRef(0);
-  const offRouteReads=useRef(0);
-  const lastRouteAt=useRef(0);
-  const lastOrigin=useRef<Position|null>(null);
-  const spokenStep=useRef('');
-  const spokenDistance=useRef<number|null>(null);
-
+  const arrivalReads=useRef(0),offRouteReads=useRef(0),lastRouteAt=useRef(0);
+  const lastOrigin=useRef<Position|null>(null),spokenStep=useRef(''),spokenDistance=useRef<number|null>(null);
   const token=()=>localStorage.getItem('bitalis_access_token');
 
   useEffect(()=>{try{setVoice(localStorage.getItem('bitalis_nav_voice')!=='off');}catch{}},[]);
   useEffect(()=>{try{localStorage.setItem('bitalis_nav_voice',voice?'on':'off');}catch{}},[voice]);
+  const speak=(text:string)=>{if(!voice||typeof window==='undefined'||!('speechSynthesis' in window)||!text)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='es-MX';u.rate=1.02;u.pitch=1;window.speechSynthesis.speak(u);};
 
-  const speak=(text:string)=>{
-    if(!voice||typeof window==='undefined'||!('speechSynthesis' in window)||!text)return;
-    window.speechSynthesis.cancel();
-    const utterance=new SpeechSynthesisUtterance(text);
-    utterance.lang='es-MX';utterance.rate=1.02;utterance.pitch=1;
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const load=async()=>{
-    const auth=token();const raw=localStorage.getItem('bitalis_auth_user');
-    if(!auth||!raw){router.replace('/');return;}
-    let user:any;try{user=JSON.parse(raw);}catch{router.replace('/');return;}
-    let saved:SavedProgress={};try{saved=JSON.parse(localStorage.getItem(routeKey(user.id))||'{}');}catch{}
-    setPlanIds(Array.isArray(saved.planIds)?saved.planIds:[]);setCompleted(Array.isArray(saved.completed)?saved.completed:[]);if(saved.selectedId)setSelectedId(saved.selectedId);
-    try{const res=await fetch('/api/collections/portfolio',{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(!res.ok)throw new Error(json?.error||'No fue posible cargar la cartera.');setCredits((Array.isArray(json?.data)?json.data:[]).filter((c:Credit)=>c.client?.latitude!=null&&c.client?.longitude!=null));}catch(e:any){setError(e?.message||'No fue posible cargar la navegación.');}finally{setLoading(false);}
-  };
-
+  const load=async()=>{const auth=token(),raw=localStorage.getItem('bitalis_auth_user');if(!auth||!raw){router.replace('/');return;}let user:any;try{user=JSON.parse(raw);}catch{router.replace('/');return;}let saved:SavedProgress={};try{saved=JSON.parse(localStorage.getItem(routeKey(user.id))||'{}');}catch{}setPlanIds(Array.isArray(saved.planIds)?saved.planIds:[]);setCompleted(Array.isArray(saved.completed)?saved.completed:[]);if(saved.selectedId)setSelectedId(saved.selectedId);if(saved.startedAt)setStartedAt(saved.startedAt);try{const res=await fetch('/api/collections/portfolio',{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(!res.ok)throw new Error(json?.error||'No fue posible cargar la cartera.');setCredits((Array.isArray(json?.data)?json.data:[]).filter((c:Credit)=>c.client?.latitude!=null&&c.client?.longitude!=null));}catch(e:any){setError(e?.message||'No fue posible cargar la navegación.');}finally{setLoading(false);}};
   useEffect(()=>{load();},[]);
   const pending=useMemo(()=>credits.filter(c=>!completed.includes(c.id)),[credits,completed]);
   const ordered=useMemo(()=>{const map=new Map(pending.map(c=>[c.id,c]));const fixed=planIds.map(id=>map.get(id)).filter(Boolean) as Credit[];const extra=pending.filter(c=>!planIds.includes(c.id));return[...fixed,...extra];},[pending,planIds]);
   const active=ordered.find(c=>c.id===selectedId)||ordered[0]||null;
+  const totalPlanned=useMemo(()=>Math.max(planIds.length,completed.length+pending.length),[planIds.length,completed.length,pending.length]);
+  const visited=Math.min(completed.length,totalPlanned),remaining=Math.max(0,totalPlanned-visited),progress=totalPlanned?Math.round((visited/totalPlanned)*100):100;
+  const jornada=useMemo(()=>{const visitSeconds=remaining*7*60;const currentTravel=directions?.durationSeconds||0;const futureTravel=Math.max(0,remaining-1)*6*60;const seconds=currentTravel+futureTravel+visitSeconds;const eta=new Date(Date.now()+seconds*1000);let remainingMeters=directions?.distanceMeters||0;for(let i=0;i<ordered.length-1;i++){const a=ordered[i].client,b=ordered[i+1].client;if(a.latitude!=null&&a.longitude!=null&&b.latitude!=null&&b.longitude!=null)remainingMeters+=distanceMeters({lat:Number(a.latitude),lng:Number(a.longitude)},{lat:Number(b.latitude),lng:Number(b.longitude)})*1.25;}let pace:'En tiempo'|'Adelantado'|'Atrasado'='En tiempo';if(startedAt&&totalPlanned){const elapsed=Math.max(1,(Date.now()-new Date(startedAt).getTime())/60000);const actual=visited/elapsed;const expected=1/13;if(visited>=3&&actual>expected*1.18)pace='Adelantado';else if(visited>=3&&actual<expected*.72)pace='Atrasado';}return{seconds,eta,remainingMeters,pace};},[remaining,directions?.durationSeconds,directions?.distanceMeters,ordered,startedAt,totalPlanned,visited]);
 
-  const saveSelected=(id:string)=>{setSelectedId(id);try{const raw=localStorage.getItem('bitalis_auth_user');if(!raw)return;const user=JSON.parse(raw);const key=routeKey(user.id);const saved=JSON.parse(localStorage.getItem(key)||'{}');localStorage.setItem(key,JSON.stringify({...saved,selectedId:id,updatedAt:new Date().toISOString()}));}catch{}};
-
-  const fetchDirections=async(pos:Position,force=false)=>{
-    if(!active)return;const auth=token();if(!auth)return;
-    const now=Date.now();const moved=lastOrigin.current?distanceMeters(lastOrigin.current,pos):9999;
-    if(!force&&now-lastRouteAt.current<20000&&moved<60)return;
-    setRouting(true);
-    try{const res=await fetch(`/api/collections/directions?originLat=${pos.lat}&originLng=${pos.lng}&destinationLat=${active.client.latitude}&destinationLng=${active.client.longitude}`,{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(!res.ok)throw new Error(json?.error||'No fue posible calcular la ruta por calles.');setDirections(json?.data||null);setProvider(json?.provider||'');lastRouteAt.current=now;lastOrigin.current=pos;offRouteReads.current=0;setOffRoute(false);setError('');}catch(e:any){setError(e?.message||'No fue posible calcular indicaciones.');}finally{setRouting(false);}
-  };
-
+  const saveSelected=(id:string)=>{setSelectedId(id);try{const raw=localStorage.getItem('bitalis_auth_user');if(!raw)return;const user=JSON.parse(raw),key=routeKey(user.id),saved=JSON.parse(localStorage.getItem(key)||'{}');localStorage.setItem(key,JSON.stringify({...saved,selectedId:id,updatedAt:new Date().toISOString()}));}catch{}};
+  const fetchDirections=async(pos:Position,force=false)=>{if(!active)return;const auth=token();if(!auth)return;const now=Date.now(),moved=lastOrigin.current?distanceMeters(lastOrigin.current,pos):9999;if(!force&&now-lastRouteAt.current<20000&&moved<60)return;setRouting(true);try{const res=await fetch(`/api/collections/directions?originLat=${pos.lat}&originLng=${pos.lng}&destinationLat=${active.client.latitude}&destinationLng=${active.client.longitude}`,{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(!res.ok)throw new Error(json?.error||'No fue posible calcular la ruta por calles.');setDirections(json?.data||null);setProvider(json?.provider||'');lastRouteAt.current=now;lastOrigin.current=pos;offRouteReads.current=0;setOffRoute(false);setError('');}catch(e:any){setError(e?.message||'No fue posible calcular indicaciones.');}finally{setRouting(false);}};
   useEffect(()=>{if(!navigator.geolocation)return;const id=navigator.geolocation.watchPosition(async p=>{const pos={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};setPosition(pos);if(active)await fetchDirections(pos);},e=>setError(e.message||'Activa ubicación para navegar.'),{enableHighAccuracy:true,maximumAge:3000,timeout:15000});return()=>navigator.geolocation.clearWatch(id);},[active?.id]);
-
-  useEffect(()=>{if(!active||!position)return;const target={lat:Number(active.client.latitude),lng:Number(active.client.longitude)};const d=distanceMeters(position,target);const accurate=(position.accuracy||999)<=100;if(d<=80&&accurate)arrivalReads.current+=1;else arrivalReads.current=0;if(arrivalReads.current>=3){speak('Has llegado al domicilio. Abriendo cobranza.');saveSelected(active.id);router.replace('/route');}},[position,active?.id]);
-
+  useEffect(()=>{if(!active||!position)return;const d=distanceMeters(position,{lat:Number(active.client.latitude),lng:Number(active.client.longitude)}),accurate=(position.accuracy||999)<=100;if(d<=80&&accurate)arrivalReads.current+=1;else arrivalReads.current=0;if(arrivalReads.current>=3){speak('Has llegado al domicilio. Abriendo cobranza.');saveSelected(active.id);router.replace('/route');}},[position,active?.id]);
   useEffect(()=>{if(active&&position){spokenStep.current='';spokenDistance.current=null;fetchDirections(position,true);}},[active?.id]);
-
   const currentStep=useMemo(()=>{if(!directions?.steps?.length||!position)return directions?.steps?.[0]||null;let best=directions.steps[0],bestD=Infinity;for(const s of directions.steps){if(!s.start)continue;const d=distanceMeters(position,s.start);if(d<bestD){best=s;bestD=d;}}return best;},[directions,position]);
   const distanceToStep=currentStep?.start&&position?distanceMeters(position,currentStep.start):null;
   const directDistance=active&&position?distanceMeters(position,{lat:Number(active.client.latitude),lng:Number(active.client.longitude)}):null;
+  useEffect(()=>{if(!voice||!currentStep||distanceToStep==null)return;const key=`${currentStep.instruction}-${currentStep.start?.lat}-${currentStep.start?.lng}`,threshold=distanceToStep<=70?70:distanceToStep<=180?180:distanceToStep<=450?450:null;if(threshold===null)return;if(spokenStep.current!==key||spokenDistance.current!==threshold){const prefix=threshold>=400?'En aproximadamente 400 metros, ':threshold>=150?'En aproximadamente 150 metros, ':'';speak(`${prefix}${currentStep.instruction}`);spokenStep.current=key;spokenDistance.current=threshold;}},[currentStep?.instruction,distanceToStep,voice]);
+  useEffect(()=>{if(!position||!directions?.geometry?.length||routing)return;const deviation=nearestDistanceToGeometry(position,directions.geometry),accurate=(position.accuracy||999)<=120;if(deviation>120&&accurate)offRouteReads.current+=1;else offRouteReads.current=0;if(offRouteReads.current>=3){setOffRoute(true);offRouteReads.current=0;speak('Te has desviado de la ruta. Recalculando.');fetchDirections(position,true);}},[position,directions?.geometry,routing]);
 
-  useEffect(()=>{
-    if(!voice||!currentStep||distanceToStep==null)return;
-    const key=`${currentStep.instruction}-${currentStep.start?.lat}-${currentStep.start?.lng}`;
-    const threshold=distanceToStep<=70?70:distanceToStep<=180?180:distanceToStep<=450?450:null;
-    if(threshold===null)return;
-    if(spokenStep.current!==key||spokenDistance.current!==threshold){
-      const prefix=threshold>=400?'En aproximadamente 400 metros, ':threshold>=150?'En aproximadamente 150 metros, ':'';
-      speak(`${prefix}${currentStep.instruction}`);
-      spokenStep.current=key;spokenDistance.current=threshold;
-    }
-  },[currentStep?.instruction,distanceToStep,voice]);
-
-  useEffect(()=>{
-    if(!position||!directions?.geometry?.length||routing)return;
-    const deviation=nearestDistanceToGeometry(position,directions.geometry);
-    const accurate=(position.accuracy||999)<=120;
-    if(deviation>120&&accurate)offRouteReads.current+=1;else offRouteReads.current=0;
-    if(offRouteReads.current>=3){
-      setOffRoute(true);offRouteReads.current=0;
-      speak('Te has desviado de la ruta. Recalculando.');
-      fetchDirections(position,true);
-    }
-  },[position,directions?.geometry,routing]);
-
-  return <div className="min-h-screen bg-slate-950 pb-24 text-slate-100">
-    <header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/90 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3"><div className="flex items-center gap-3"><button onClick={()=>router.push('/route')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900"><ArrowLeft className="h-4 w-4"/></button><BitalisLogo size="md" variant="dark"/></div><div className="flex gap-2"><button onClick={()=>setVoice(v=>!v)} className={`flex h-10 w-10 items-center justify-center rounded-xl border ${voice?'border-emerald-400/20 bg-emerald-500/10 text-emerald-300':'border-slate-800 bg-slate-900 text-slate-500'}`}>{voice?<Volume2 className="h-4 w-4"/>:<VolumeX className="h-4 w-4"/>}</button><button disabled={!position||routing} onClick={()=>position&&fetchDirections(position,true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${routing?'animate-spin':''}`}/></button></div></div></header>
-    <main className="mx-auto max-w-6xl px-4 py-4">
-      {!active&&!loading?<div className="rounded-[26px] border border-emerald-400/15 bg-emerald-500/5 p-8 text-center"><CheckCircle2 className="mx-auto h-10 w-10 text-emerald-400"/><h1 className="mt-3 text-xl font-black">Ruta completada</h1><button onClick={()=>router.push('/route/close')} className="mt-5 rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black text-slate-950">Cerrar jornada</button></div>:null}
-      {active&&<><section className="rounded-[24px] border border-emerald-400/10 bg-slate-900/80 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-300">Navegando a</p><p className="mt-1 text-xl font-black">{active.client.firstName} {active.client.lastName}</p><p className="mt-1 text-xs text-slate-500">{active.client.clientNumber} · Saldo ${Number(active.saldoActual).toLocaleString('es-MX')}</p></div><Navigation className="h-7 w-7 text-emerald-400"/></div>{directions&&<div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-xl bg-slate-950 p-3"><p className="text-[9px] uppercase text-slate-600">Ruta vial</p><p className="mt-1 text-lg font-black">{fmtDistance(directions.distanceMeters)}</p></div><div className="rounded-xl bg-slate-950 p-3"><p className="text-[9px] uppercase text-slate-600">Tiempo aprox.</p><p className="mt-1 text-lg font-black text-emerald-300">{fmtDuration(directions.durationSeconds)}</p></div></div>}</section>
-      {currentStep&&<section className="mt-3 rounded-[24px] border border-blue-400/10 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-blue-300">Siguiente indicación</p><p className="mt-2 text-xl font-black">{currentStep.instruction}</p><p className="mt-1 text-xs text-slate-400">{distanceToStep!=null?`En ${fmtDistance(distanceToStep)} · `:''}tramo {fmtDistance(currentStep.distanceMeters)}{provider?` · ${provider}`:''}</p></section>}
-      {offRoute&&<div className="mt-3 flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-200"><AlertTriangle className="h-5 w-5"/>Desvío detectado. Recalculando ruta automáticamente…</div>}
-      {error&&<div className="mt-3 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
-      {loading||!position?<div className="mt-4 flex items-center justify-center gap-2 rounded-[24px] border border-white/5 bg-slate-900/70 p-10 text-sm text-slate-400"><Loader2 className="h-5 w-5 animate-spin"/>Preparando navegación…</div>:<section className="mt-4"><RoadNavigationMap position={position} destination={{lat:Number(active.client.latitude),lng:Number(active.client.longitude),name:`${active.client.firstName} ${active.client.lastName}`}} geometry={directions?.geometry||[]} follow={follow}/><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={()=>setFollow(v=>!v)} className="flex items-center justify-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-3 text-xs font-black text-blue-200">{follow?<MapPinned className="h-4 w-4"/>:<Crosshair className="h-4 w-4"/>}{follow?'Ver ruta completa':'Seguir posición'}</button><button onClick={()=>{saveSelected(active.id);router.push('/route');}} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-3 py-3 text-xs font-black text-slate-950"><Route className="h-4 w-4"/>Abrir cobranza</button></div>{directDistance!=null&&<p className="mt-2 text-center text-[10px] text-slate-600">Distancia directa al domicilio: {fmtDistance(directDistance)}</p>}</section>}</>}
-    </main>
-  </div>;
+  return <div className="min-h-screen bg-slate-950 pb-24 text-slate-100"><header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/90 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3"><div className="flex items-center gap-3"><button onClick={()=>router.push('/route')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900"><ArrowLeft className="h-4 w-4"/></button><BitalisLogo size="md" variant="dark"/></div><div className="flex gap-2"><button onClick={()=>setVoice(v=>!v)} className={`flex h-10 w-10 items-center justify-center rounded-xl border ${voice?'border-emerald-400/20 bg-emerald-500/10 text-emerald-300':'border-slate-800 bg-slate-900 text-slate-500'}`}>{voice?<Volume2 className="h-4 w-4"/>:<VolumeX className="h-4 w-4"/>}</button><button disabled={!position||routing} onClick={()=>position&&fetchDirections(position,true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${routing?'animate-spin':''}`}/></button></div></div></header><main className="mx-auto max-w-6xl px-4 py-4">
+  {totalPlanned>0&&<section className="mb-4 rounded-[24px] border border-white/5 bg-slate-900/80 p-4"><div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-[#C79A3B]">Jornada de cobranza</p><p className="mt-1 text-lg font-black">{visited}/{totalPlanned} visitados · {progress}%</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black ${jornada.pace==='Atrasado'?'bg-red-500/15 text-red-300':jornada.pace==='Adelantado'?'bg-blue-500/15 text-blue-300':'bg-emerald-500/15 text-emerald-300'}`}>{jornada.pace}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-[#FF6A00] transition-all" style={{width:`${progress}%`}}/></div><div className="mt-3 grid grid-cols-3 gap-2"><div className="rounded-xl bg-slate-950 p-3"><Users className="h-4 w-4 text-slate-500"/><p className="mt-2 text-lg font-black">{remaining}</p><p className="text-[9px] uppercase text-slate-600">Restantes</p></div><div className="rounded-xl bg-slate-950 p-3"><Route className="h-4 w-4 text-slate-500"/><p className="mt-2 text-lg font-black">{fmtDistance(jornada.remainingMeters)}</p><p className="text-[9px] uppercase text-slate-600">Ruta restante</p></div><div className="rounded-xl bg-slate-950 p-3"><Clock3 className="h-4 w-4 text-slate-500"/><p className="mt-2 text-lg font-black text-emerald-300">{fmtClock(jornada.eta)}</p><p className="text-[9px] uppercase text-slate-600">ETA fin</p></div></div><p className="mt-2 flex items-center gap-1 text-[10px] text-slate-600"><Gauge className="h-3 w-3"/>ETA operativa estimada con trayecto disponible y tiempo promedio de visita; se actualiza durante la jornada.</p></section>}
+  {!active&&!loading?<div className="rounded-[26px] border border-emerald-400/15 bg-emerald-500/5 p-8 text-center"><CheckCircle2 className="mx-auto h-10 w-10 text-emerald-400"/><h1 className="mt-3 text-xl font-black">Ruta completada</h1><button onClick={()=>router.push('/route/close')} className="mt-5 rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black text-slate-950">Cerrar jornada</button></div>:null}
+  {active&&<><section className="rounded-[24px] border border-emerald-400/10 bg-slate-900/80 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-300">Navegando a</p><p className="mt-1 text-xl font-black">{active.client.firstName} {active.client.lastName}</p><p className="mt-1 text-xs text-slate-500">{active.client.clientNumber} · Saldo ${Number(active.saldoActual).toLocaleString('es-MX')}</p></div><Navigation className="h-7 w-7 text-emerald-400"/></div>{directions&&<div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-xl bg-slate-950 p-3"><p className="text-[9px] uppercase text-slate-600">Ruta vial</p><p className="mt-1 text-lg font-black">{fmtDistance(directions.distanceMeters)}</p></div><div className="rounded-xl bg-slate-950 p-3"><p className="text-[9px] uppercase text-slate-600">Tiempo aprox.</p><p className="mt-1 text-lg font-black text-emerald-300">{fmtDuration(directions.durationSeconds)}</p></div></div>}</section>{currentStep&&<section className="mt-3 rounded-[24px] border border-blue-400/10 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-blue-300">Siguiente indicación</p><p className="mt-2 text-xl font-black">{currentStep.instruction}</p><p className="mt-1 text-xs text-slate-400">{distanceToStep!=null?`En ${fmtDistance(distanceToStep)} · `:''}tramo {fmtDistance(currentStep.distanceMeters)}{provider?` · ${provider}`:''}</p></section>}{offRoute&&<div className="mt-3 flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-200"><AlertTriangle className="h-5 w-5"/>Desvío detectado. Recalculando ruta automáticamente…</div>}{error&&<div className="mt-3 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}{loading||!position?<div className="mt-4 flex items-center justify-center gap-2 rounded-[24px] border border-white/5 bg-slate-900/70 p-10 text-sm text-slate-400"><Loader2 className="h-5 w-5 animate-spin"/>Preparando navegación…</div>:<section className="mt-4"><RoadNavigationMap position={position} destination={{lat:Number(active.client.latitude),lng:Number(active.client.longitude),name:`${active.client.firstName} ${active.client.lastName}`}} geometry={directions?.geometry||[]} follow={follow}/><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={()=>setFollow(v=>!v)} className="flex items-center justify-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-3 text-xs font-black text-blue-200">{follow?<MapPinned className="h-4 w-4"/>:<Crosshair className="h-4 w-4"/>}{follow?'Ver ruta completa':'Seguir posición'}</button><button onClick={()=>{saveSelected(active.id);router.push('/route');}} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-3 py-3 text-xs font-black text-slate-950"><Route className="h-4 w-4"/>Abrir cobranza</button></div>{directDistance!=null&&<p className="mt-2 text-center text-[10px] text-slate-600">Distancia directa al domicilio: {fmtDistance(directDistance)}</p>}</section>}</>}
+</main></div>;
 }
