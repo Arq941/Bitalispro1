@@ -1,9 +1,9 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Crosshair, Loader2, MapPinned, Navigation, RefreshCw, Route } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Crosshair, Loader2, MapPinned, Navigation, RefreshCw, Route } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 
 const CollectorRouteMap = dynamic(() => import('@/components/CollectorRouteMap'), { ssr: false });
@@ -11,10 +11,12 @@ const CollectorRouteMap = dynamic(() => import('@/components/CollectorRouteMap')
 type Position = { lat: number; lng: number; accuracy?: number };
 type Client = { id:string; clientNumber:string; firstName:string; lastName:string; latitude?:number|null; longitude?:number|null; riskLevel?:string };
 type Credit = { id:string; saldoActual:number; client:Client };
+type SavedProgress = { planIds?: string[]; completed?: string[]; selectedId?: string; arrivalCreditId?:string; arrivalAt?:string };
 
-type SavedProgress = { planIds?: string[]; completed?: string[]; selectedId?: string };
 const todayMx=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const routeKey=(uid:string)=>`bitalis_route_progress_${uid}_${todayMx()}`;
+const toRad=(v:number)=>(v*Math.PI)/180;
+function distanceMeters(a:Position,b:{lat:number;lng:number}){const R=6371000,dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);const x=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
 
 export default function RouteMapPage(){
   const router = useRouter();
@@ -26,15 +28,27 @@ export default function RouteMapPage(){
   const [mode,setMode] = useState<'overview'|'navigation'>('navigation');
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState('');
+  const [userId,setUserId] = useState('');
+  const [arrivalCountdown,setArrivalCountdown] = useState<number|null>(null);
+  const arrivalHits = useRef(0);
+  const redirected = useRef(false);
 
   const token = () => localStorage.getItem('bitalis_access_token');
+  const saveSelection=(creditId:string,arrival=false)=>{
+    if(!userId)return;
+    try{
+      const key=routeKey(userId);
+      const current=JSON.parse(localStorage.getItem(key)||'{}');
+      localStorage.setItem(key,JSON.stringify({...current,selectedId:creditId,...(arrival?{arrivalCreditId:creditId,arrivalAt:new Date().toISOString()}:{})}));
+    }catch{}
+  };
 
   const load = async () => {
     const auth = token();
     const rawUser = localStorage.getItem('bitalis_auth_user');
     if(!auth || !rawUser){ router.replace('/'); return; }
     let user:any;
-    try{ user=JSON.parse(rawUser); }catch{ router.replace('/'); return; }
+    try{ user=JSON.parse(rawUser); setUserId(user.id); }catch{ router.replace('/'); return; }
     if(!navigator.geolocation){ setError('Este dispositivo no permite geolocalización.'); setLoading(false); return; }
 
     let saved:SavedProgress={};
@@ -60,34 +74,50 @@ export default function RouteMapPage(){
     const watch=navigator.geolocation.watchPosition(
       p=>setPosition({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),
       e=>setError(e.message || 'Activa el permiso de ubicación para usar el mapa en vivo.'),
-      {enableHighAccuracy:true,maximumAge:3000,timeout:15000}
+      {enableHighAccuracy:true,maximumAge:2000,timeout:15000}
     );
     return()=>navigator.geolocation.clearWatch(watch);
   },[]);
 
   const pending=useMemo(()=>credits.filter(c=>!completed.includes(c.id)),[credits,completed]);
-  const ordered=useMemo(()=>{
-    const map=new Map(pending.map(c=>[c.id,c]));
-    const fixed=planIds.map(id=>map.get(id)).filter(Boolean) as Credit[];
-    const extra=pending.filter(c=>!planIds.includes(c.id));
-    return [...fixed,...extra];
-  },[pending,planIds]);
+  const ordered=useMemo(()=>{const map=new Map(pending.map(c=>[c.id,c]));const fixed=planIds.map(id=>map.get(id)).filter(Boolean) as Credit[];const extra=pending.filter(c=>!planIds.includes(c.id));return [...fixed,...extra];},[pending,planIds]);
 
   useEffect(()=>{
     if(!selectedId && ordered[0]) setSelectedId(ordered[0].id);
     if(selectedId && !ordered.some(c=>c.id===selectedId) && ordered[0]) setSelectedId(ordered[0].id);
   },[ordered,selectedId]);
 
-  const stops=ordered.map((c,index)=>({id:c.id,order:index+1,lat:Number(c.client.latitude),lng:Number(c.client.longitude),name:`${c.client.firstName} ${c.client.lastName}`,clientNumber:c.client.clientNumber,balance:Number(c.saldoActual),riskLevel:c.client.riskLevel,active:c.id===selectedId}));
   const active=ordered.find(c=>c.id===selectedId) || ordered[0] || null;
+  const activeDistance=active&&position?distanceMeters(position,{lat:Number(active.client.latitude),lng:Number(active.client.longitude)}):null;
+  const arrived=activeDistance!=null&&activeDistance<=80;
+
+  useEffect(()=>{
+    if(!active||!position||mode!=='navigation'||redirected.current){arrivalHits.current=0;setArrivalCountdown(null);return;}
+    const d=distanceMeters(position,{lat:Number(active.client.latitude),lng:Number(active.client.longitude)});
+    const accuracy=position.accuracy||999;
+    if(d<=80&&accuracy<=100){
+      arrivalHits.current+=1;
+      const remaining=Math.max(0,3-arrivalHits.current);
+      setArrivalCountdown(remaining);
+      if(arrivalHits.current>=3){
+        redirected.current=true;
+        saveSelection(active.id,true);
+        window.setTimeout(()=>router.push('/route'),700);
+      }
+    }else{arrivalHits.current=0;setArrivalCountdown(null);}
+  },[position?.lat,position?.lng,position?.accuracy,active?.id,mode,userId]);
+
+  const selectStop=(id:string)=>{setSelectedId(id);saveSelection(id,false);arrivalHits.current=0;setArrivalCountdown(null);};
+  const openCollection=()=>{if(active){saveSelection(active.id,arrived);router.push('/route');}};
+  const stops=ordered.map((c,index)=>({id:c.id,order:index+1,lat:Number(c.client.latitude),lng:Number(c.client.longitude),name:`${c.client.firstName} ${c.client.lastName}`,clientNumber:c.client.clientNumber,balance:Number(c.saldoActual),riskLevel:c.client.riskLevel,active:c.id===active?.id}));
 
   return <div className="min-h-screen bg-slate-950 text-slate-100">
     <header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/90 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3"><div className="flex items-center gap-3"><button onClick={()=>router.push('/route')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900"><ArrowLeft className="h-4 w-4"/></button><BitalisLogo size="md" variant="dark"/></div><button onClick={load} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900"><RefreshCw className={`h-4 w-4 ${loading?'animate-spin':''}`}/></button></div></header>
     <main className="mx-auto max-w-6xl px-4 py-5">
-      <section className="rounded-[28px] border border-emerald-400/10 bg-gradient-to-br from-slate-900 to-emerald-950/20 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.16em] text-emerald-300"><MapPinned className="h-3.5 w-3.5"/> Mapa interno</div><h1 className="mt-4 text-2xl font-black">Navegación de cobranza</h1><p className="mt-2 text-sm text-slate-400">GPS en vivo y siguiente parada dentro de BITALIS.</p></div><button onClick={()=>setMode(m=>m==='navigation'?'overview':'navigation')} className="flex items-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-xs font-black text-blue-200">{mode==='navigation'?<Crosshair className="h-4 w-4"/>:<Navigation className="h-4 w-4"/>}{mode==='navigation'?'Ver ruta completa':'Seguir mi posición'}</button></div></section>
+      <section className="rounded-[28px] border border-emerald-400/10 bg-gradient-to-br from-slate-900 to-emerald-950/20 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.16em] text-emerald-300"><MapPinned className="h-3.5 w-3.5"/> Mapa interno</div><h1 className="mt-4 text-2xl font-black">Navegación de cobranza</h1><p className="mt-2 text-sm text-slate-400">GPS en vivo, distancia dinámica y llegada automática al siguiente cliente.</p></div><button onClick={()=>setMode(m=>m==='navigation'?'overview':'navigation')} className="flex items-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-xs font-black text-blue-200">{mode==='navigation'?<Crosshair className="h-4 w-4"/>:<Navigation className="h-4 w-4"/>}{mode==='navigation'?'Ver ruta completa':'Seguir mi posición'}</button></div></section>
       {error&&<div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
-      {active&&<section className="mt-4 rounded-2xl border border-emerald-400/10 bg-slate-900/80 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-300">Siguiente parada</p><div className="mt-2 flex items-center justify-between gap-3"><div><p className="text-lg font-black">{active.client.firstName} {active.client.lastName}</p><p className="text-xs text-slate-500">{active.client.clientNumber} · Saldo ${Number(active.saldoActual).toLocaleString('es-MX')}</p></div><button onClick={()=>router.push('/route')} className="rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black text-slate-950">Abrir cobranza</button></div></section>}
-      {loading&&!position?<div className="mt-5 flex items-center justify-center gap-2 rounded-[24px] border border-white/5 bg-slate-900/70 p-10 text-sm text-slate-400"><Loader2 className="h-5 w-5 animate-spin"/>Obteniendo GPS y preparando ruta…</div>:position?<section className="mt-5"><CollectorRouteMap position={position} stops={stops} onSelect={setSelectedId} mode={mode}/><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{ordered.map((c,index)=><button key={c.id} onClick={()=>setSelectedId(c.id)} className={`rounded-2xl border p-3 text-left ${selectedId===c.id?'border-emerald-400/30 bg-emerald-500/10':'border-slate-800 bg-slate-900'}`}><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-xs font-black">{index+1}</div><div><p className="text-sm font-black">{c.client.firstName} {c.client.lastName}</p><p className="text-[10px] text-slate-500">{c.client.clientNumber} · Saldo ${Number(c.saldoActual).toLocaleString('es-MX')}</p></div></div></button>)}</div><button onClick={()=>router.push('/route')} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-black text-slate-950"><Route className="h-5 w-5"/>Volver al modo cobranza</button></section>:null}
+      {active&&<section className={`mt-4 rounded-2xl border p-4 ${arrived?'border-emerald-400/30 bg-emerald-500/10':'border-emerald-400/10 bg-slate-900/80'}`}><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-300">{arrived?'Llegada detectada':'Siguiente parada'}</p><p className="mt-1 text-lg font-black">{active.client.firstName} {active.client.lastName}</p><p className="text-xs text-slate-500">{active.client.clientNumber} · Saldo ${Number(active.saldoActual).toLocaleString('es-MX')}</p>{activeDistance!=null&&<p className="mt-2 text-2xl font-black text-emerald-300">{activeDistance<1000?`${Math.round(activeDistance)} m`:`${(activeDistance/1000).toFixed(1)} km`}</p>}{arrived&&<p className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-200"><CheckCircle2 className="h-4 w-4"/> Dentro del radio de 80 m{arrivalCountdown!=null&&arrivalCountdown>0?` · confirmando GPS ${3-arrivalCountdown}/3`:''}</p>}</div><button onClick={openCollection} className="rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black text-slate-950">Abrir cobranza</button></div></section>}
+      {loading&&!position?<div className="mt-5 flex items-center justify-center gap-2 rounded-[24px] border border-white/5 bg-slate-900/70 p-10 text-sm text-slate-400"><Loader2 className="h-5 w-5 animate-spin"/>Obteniendo GPS y preparando ruta…</div>:position?<section className="mt-5"><CollectorRouteMap position={position} stops={stops} onSelect={selectStop} mode={mode}/><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{ordered.map((c,index)=><button key={c.id} onClick={()=>selectStop(c.id)} className={`rounded-2xl border p-3 text-left ${active?.id===c.id?'border-emerald-400/30 bg-emerald-500/10':'border-slate-800 bg-slate-900'}`}><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-xs font-black">{index+1}</div><div><p className="text-sm font-black">{c.client.firstName} {c.client.lastName}</p><p className="text-[10px] text-slate-500">{c.client.clientNumber} · Saldo ${Number(c.saldoActual).toLocaleString('es-MX')}</p></div></div></button>)}</div><button onClick={()=>router.push('/route')} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-black text-slate-950"><Route className="h-5 w-5"/>Volver al modo cobranza</button></section>:null}
     </main>
   </div>;
 }
