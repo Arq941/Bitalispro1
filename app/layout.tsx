@@ -2,6 +2,7 @@ import type {Metadata,Viewport} from 'next';
 import './globals.css';
 import { ImageLightboxProvider } from '@/components/ImageLightboxContext';
 import PWAProvider from '@/components/phase15/PWAProvider';
+import AdminBuildIndicator from '@/components/phase15/AdminBuildIndicator';
 
 export const metadata: Metadata = {
   title: 'BITALIS • ERP CRM Cobranza en Ruta',
@@ -20,7 +21,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css" />
       </head>
       <body className="min-h-screen overflow-x-hidden bg-[#F3F4F6] text-[#2B2B2B] antialiased selection:bg-[#FF6A00] selection:text-white" suppressHydrationWarning>
-        <PWAProvider><ImageLightboxProvider>{children}</ImageLightboxProvider></PWAProvider>
+        <PWAProvider><ImageLightboxProvider>{children}<AdminBuildIndicator/></ImageLightboxProvider></PWAProvider>
       </body>
     </html>
   );
