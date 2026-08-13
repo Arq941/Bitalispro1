@@ -5,5 +5,29 @@ import {useRouter} from 'next/navigation';
 import {Bell,CloudUpload,Database,KeyRound,LockKeyhole,Settings,ShieldCheck,Smartphone,Users} from 'lucide-react';
 import AppShell from '@/components/phase15/AppShell';
 
-export default function SettingsPage(){const router=useRouter();const[user,setUser]=useState<any>(null),[installable,setInstallable]=useState(false);useEffect(()=>{try{const raw=localStorage.getItem('bitalis_auth_user');if(raw)setUser(JSON.parse(raw));}catch{}const standalone=window.matchMedia('(display-mode: standalone)').matches;setInstallable(!standalone);},[]);const isAdmin=String(user?.role||'').toUpperCase()==='ADMIN';return <AppShell title="Configuración"><div className="mx-auto max-w-5xl px-4 py-5"><section className="rounded-[28px] bg-[#12224A] p-5 text-white"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.14em] text-[#C79A3B]"><Settings className="h-4 w-4"/>Producción</div><h1 className="mt-3 text-2xl font-black">Configuración</h1><p className="mt-2 text-sm text-slate-300">Preferencias de experiencia, seguridad y estado PWA.</p></section><div className="mt-5 grid gap-3 sm:grid-cols-2">{isAdmin&&<button onClick={()=>router.push('/settings/users')} className="rounded-3xl border border-blue-200 bg-blue-50 p-5 text-left shadow-sm"><Users className="h-5 w-5 text-[#12224A]"/><h2 className="mt-3 font-black text-[#12224A]">Usuarios y permisos</h2><p className="mt-2 text-sm leading-6 text-slate-600">Crea cuentas, asigna roles, bloquea usuarios y configura permisos por módulo.</p></button>}<Card I={ShieldCheck} title="Sesión" text={`${user?.email||'Usuario'} · ${user?.role||'Rol no disponible'}`}/><Card I={Database} title="Backend" text="PostgreSQL + Prisma. El servidor permanece como autoridad financiera."/><Card I={LockKeyhole} title="Seguridad" text="Las acciones sensibles siguen validadas en backend por permisos y contexto de usuario."/><Card I={Smartphone} title="PWA" text={installable?'Disponible para instalar desde el navegador compatible.':'BITALIS se está ejecutando como aplicación instalada.'}/><button onClick={()=>router.push('/sync')} className="rounded-3xl border border-orange-200 bg-orange-50 p-5 text-left shadow-sm"><CloudUpload className="h-5 w-5 text-[#FF6A00]"/><h2 className="mt-3 font-black text-[#12224A]">Sincronización offline</h2><p className="mt-2 text-sm leading-6 text-slate-600">Revisa operaciones pendientes, errores de sincronización e inténtalas enviar nuevamente.</p></button><Card I={Bell} title="Notificaciones" text="Centro de alertas disponible. Web Push se habilita cuando el navegador y la configuración del servidor lo permiten."/><Card I={KeyRound} title="Credenciales" text="Las contraseñas y secretos nunca se muestran ni almacenan desde esta pantalla."/></div><div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><b>Mejora de seguridad pendiente de migración:</b> la aplicación histórica todavía usa token de acceso en almacenamiento del navegador. La Fase 15 deja documentada la migración recomendada a cookies HttpOnly/SameSite sin romper el login productivo actual.</div></div></AppShell>}
-function Card({I,title,text}:{I:any;title:string;text:string}){return <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><I className="h-5 w-5 text-[#C79A3B]"/><h2 className="mt-3 font-black text-[#12224A]">{title}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{text}</p></article>}
+export default function SettingsPage(){
+ const router=useRouter();
+ const[user,setUser]=useState<any>(null),[installable,setInstallable]=useState(false);
+ useEffect(()=>{try{const raw=localStorage.getItem('bitalis_auth_user');if(raw)setUser(JSON.parse(raw));}catch{}const standalone=window.matchMedia('(display-mode: standalone)').matches;setInstallable(!standalone);},[]);
+ const isAdmin=String(user?.role||'').toUpperCase()==='ADMIN';
+ return <AppShell title="Más"><div className="mx-auto max-w-5xl px-3 py-3 sm:px-4 sm:py-5">
+  <section className="rounded-[24px] bg-[#12224A] p-4 text-white shadow-lg shadow-slate-900/10 sm:p-6">
+   <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-[#C79A3B]"><Settings className="h-4 w-4"/>Administración</div>
+   <h1 className="mt-2 text-xl font-black sm:text-2xl">Más opciones</h1>
+   <p className="mt-1 text-sm text-slate-300">Seguridad, sesión, sincronización y preferencias de BITALIS.</p>
+  </section>
+  <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-3">
+   {isAdmin&&<ActionCard I={Users} title="Usuarios" text="Roles y permisos" onClick={()=>router.push('/settings/users')}/>} 
+   <InfoCard I={ShieldCheck} title="Sesión" text={user?.email||'Usuario'}/>
+   <InfoCard I={Database} title="Backend" text="Servidor activo"/>
+   <InfoCard I={LockKeyhole} title="Seguridad" text="Validación por permisos"/>
+   <InfoCard I={Smartphone} title="Aplicación" text={installable?'Disponible para instalar':'Ejecutándose instalada'}/>
+   <ActionCard I={CloudUpload} title="Sincronización" text="Pendientes y reintentos" onClick={()=>router.push('/sync')}/>
+   <InfoCard I={Bell} title="Notificaciones" text="Centro de alertas"/>
+   <InfoCard I={KeyRound} title="Credenciales" text="Protegidas"/>
+  </div>
+ </div></AppShell>;
+}
+
+function ActionCard({I,title,text,onClick}:{I:any;title:string;text:string;onClick:()=>void}){return <button onClick={onClick} className="min-h-[108px] rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm active:scale-[.98] sm:min-h-32 sm:rounded-3xl sm:p-5"><I className="h-5 w-5 text-[#FF6A00]"/><h2 className="mt-3 text-sm font-black text-[#12224A] sm:text-base">{title}</h2><p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-sm">{text}</p></button>}
+function InfoCard({I,title,text}:{I:any;title:string;text:string}){return <article className="min-h-[108px] rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:min-h-32 sm:rounded-3xl sm:p-5"><I className="h-5 w-5 text-[#C79A3B]"/><h2 className="mt-3 text-sm font-black text-[#12224A] sm:text-base">{title}</h2><p className="mt-1 break-words text-[11px] leading-4 text-slate-500 sm:text-sm">{text}</p></article>}
