@@ -1,7 +1,62 @@
 'use client';
 
 import {ReactNode,useEffect,useState} from 'react';
-import {RefreshCw,Wifi,WifiOff} from 'lucide-react';
+import {Wifi,WifiOff} from 'lucide-react';
 import SyncManager from '@/components/phase15/SyncManager';
 
-export default function PWAProvider({children}:{children:ReactNode}){const[update,setUpdate]=useState<ServiceWorkerRegistration|null>(null);const[online,setOnline]=useState(true);useEffect(()=>{setOnline(navigator.onLine);const on=()=>setOnline(true),off=()=>setOnline(false);window.addEventListener('online',on);window.addEventListener('offline',off);if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js').then(r=>{if(r.waiting)setUpdate(r);r.addEventListener('updatefound',()=>{const w=r.installing;if(w)w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)setUpdate(r);});});}).catch(()=>{});}const expired=()=>{localStorage.removeItem('bitalis_access_token');localStorage.removeItem('bitalis_refresh_token');location.assign('/');};window.addEventListener('bitalis:session-expired',expired);return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off);window.removeEventListener('bitalis:session-expired',expired);};},[]);const apply=()=>{const w=update?.waiting;if(w){w.postMessage({type:'SKIP_WAITING'});navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload(),{once:true});}else location.reload();};return <>{children}<div className={`fixed left-3 top-3 z-[100] flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm ${online?'border-emerald-200 bg-white text-emerald-700':'border-red-200 bg-red-50 text-red-700'}`}>{online?<Wifi className="h-3 w-3"/>:<WifiOff className="h-3 w-3"/>}{online?'CONECTADO':'SIN CONEXIÓN'}</div><SyncManager/>{update&&<div className="fixed inset-x-3 bottom-24 z-[100] mx-auto flex max-w-lg items-center justify-between gap-3 rounded-2xl border border-[#C79A3B]/30 bg-[#12224A] p-4 text-white shadow-2xl"><div><p className="text-xs font-black">Hay una nueva versión disponible</p><p className="mt-1 text-[10px] text-slate-300">Actualiza cuando no tengas operaciones pendientes.</p></div><button onClick={apply} className="flex min-h-11 items-center gap-2 rounded-xl bg-[#FF6A00] px-4 text-xs font-black"><RefreshCw className="h-4 w-4"/>Actualizar</button></div>}</>}
+const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
+
+export default function PWAProvider({children}:{children:ReactNode}){
+  const[online,setOnline]=useState(true);
+
+  useEffect(()=>{
+    setOnline(navigator.onLine);
+    const on=()=>setOnline(true);
+    const off=()=>setOnline(false);
+    window.addEventListener('online',on);
+    window.addEventListener('offline',off);
+
+    const disableLegacyPwa=async()=>{
+      try{
+        if('serviceWorker' in navigator){
+          const registrations=await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(registration=>registration.unregister()));
+        }
+        if('caches' in window){
+          const keys=await caches.keys();
+          await Promise.all(
+            keys
+              .filter(key=>LEGACY_PWA_CACHE_PREFIXES.some(prefix=>key.startsWith(prefix)))
+              .map(key=>caches.delete(key))
+          );
+        }
+      }catch(error){
+        console.warn('No fue posible limpiar completamente el PWA legacy:',error);
+      }
+    };
+
+    disableLegacyPwa();
+
+    const expired=()=>{
+      localStorage.removeItem('bitalis_access_token');
+      localStorage.removeItem('bitalis_refresh_token');
+      location.assign('/');
+    };
+    window.addEventListener('bitalis:session-expired',expired);
+
+    return()=>{
+      window.removeEventListener('online',on);
+      window.removeEventListener('offline',off);
+      window.removeEventListener('bitalis:session-expired',expired);
+    };
+  },[]);
+
+  return <>
+    {children}
+    <div className={`fixed left-3 top-3 z-[100] flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm ${online?'border-emerald-200 bg-white text-emerald-700':'border-red-200 bg-red-50 text-red-700'}`}>
+      {online?<Wifi className="h-3 w-3"/>:<WifiOff className="h-3 w-3"/>}
+      {online?'CONECTADO':'SIN CONEXIÓN'}
+    </div>
+    <SyncManager/>
+  </>;
+}
