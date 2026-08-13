@@ -1,21 +1,12 @@
 'use client';
 
-import {ReactNode,useEffect,useState} from 'react';
-import {Wifi,WifiOff} from 'lucide-react';
+import {ReactNode,useEffect} from 'react';
 import SyncManager from '@/components/phase15/SyncManager';
 
 const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
 
 export default function PWAProvider({children}:{children:ReactNode}){
-  const[online,setOnline]=useState(true);
-
   useEffect(()=>{
-    setOnline(navigator.onLine);
-    const on=()=>setOnline(true);
-    const off=()=>setOnline(false);
-    window.addEventListener('online',on);
-    window.addEventListener('offline',off);
-
     const disableLegacyPwa=async()=>{
       try{
         if('serviceWorker' in navigator){
@@ -45,18 +36,12 @@ export default function PWAProvider({children}:{children:ReactNode}){
     window.addEventListener('bitalis:session-expired',expired);
 
     return()=>{
-      window.removeEventListener('online',on);
-      window.removeEventListener('offline',off);
       window.removeEventListener('bitalis:session-expired',expired);
     };
   },[]);
 
   return <>
     {children}
-    <div className={`fixed left-3 top-3 z-[100] flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm ${online?'border-emerald-200 bg-white text-emerald-700':'border-red-200 bg-red-50 text-red-700'}`}>
-      {online?<Wifi className="h-3 w-3"/>:<WifiOff className="h-3 w-3"/>}
-      {online?'CONECTADO':'SIN CONEXIÓN'}
-    </div>
     <SyncManager/>
   </>;
 }
