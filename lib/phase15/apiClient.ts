@@ -4,12 +4,14 @@ export type ApiError = { status:number; code?:string; message:string; queued?:bo
 export type ApiOptions = RequestInit & { timeoutMs?:number; retry?:number; idempotencyKey?:string; skipRefresh?:boolean };
 
 const friendly = (status:number, raw:any):ApiError => {
-  const msg = String(raw?.error || raw?.message || '').toLowerCase();
+  const original = String(raw?.error || raw?.message || '').trim();
+  const msg = original.toLowerCase();
   if(status===401) return {status,code:'SESSION_EXPIRED',message:'Tu sesión expiró. Inicia sesión nuevamente.'};
   if(status===403) return {status,code:'FORBIDDEN',message:'No tienes autorización para realizar esta operación.'};
-  if(status===409) return {status,code:'CONFLICT',message:'La operación ya fue registrada o existe un conflicto pendiente.'};
-  if(status>=500 || msg.includes('prisma') || msg.includes('sql')) return {status,code:'SERVER_ERROR',message:'No pudimos completar la operación. Intenta nuevamente.'};
-  return {status,code:raw?.code,message:raw?.error || raw?.message || 'No pudimos completar la operación.'};
+  if(status===409) return {status,code:'CONFLICT',message:original || 'Ya existe un registro con esos datos.'};
+  if(status===400 && original) return {status,code:raw?.code,message:original};
+  if(status>=500 || msg.includes('prisma') || msg.includes('sql')) return {status,code:'SERVER_ERROR',message:original && !msg.includes('prisma') && !msg.includes('sql') ? original : 'No pudimos completar la operación. Intenta nuevamente.'};
+  return {status,code:raw?.code,message:original || 'No pudimos completar la operación.'};
 };
 
 function accessToken(){ if(typeof window==='undefined') return null; return localStorage.getItem('bitalis_access_token'); }
