@@ -5,7 +5,7 @@ import {useRouter} from 'next/navigation';
 import {Camera,CheckCircle2,ChevronRight,Crosshair,FileCheck2,Home,Loader2,MapPin,Phone,RefreshCw,Search,ShieldCheck,UserRound} from 'lucide-react';
 import AppShell,{useShellPermissions} from '@/components/phase15/AppShell';
 import ClientLocationSheet,{ClientLocationValue} from '@/components/client/ClientLocationSheet';
-import {newIdempotencyKey} from '@/lib/phase15/apiClient';
+import {apiClient,newIdempotencyKey} from '@/lib/phase15/apiClient';
 import {haptic} from '@/lib/ux/haptics';
 
 type Client={id:string;clientNumber:string;firstName:string;lastName:string;secondLastName?:string|null;phone?:string|null;status:string;riskLevel:string;customerType?:string|null;createdAt:string;latitude?:number|null;longitude?:number|null;locationAccuracy?:number|null;locationCapturedAt?:string|null};
@@ -28,7 +28,7 @@ export default function ClientsScreen({intakeOnly=false}:{intakeOnly?:boolean}){
  const canCreate=permissions?.has('clients.create')===true,canView=permissions?.has('clients.view')===true,canEdit=permissions?.has('clients.edit')===true,canFastIntake=canCreate&&['VENDEDORA','SUPERVISORA','ADMIN'].includes(role),operationalReview=['SUPERVISORA','ADMIN'].includes(role);
 
  useEffect(()=>{if(intakeOnly||new URLSearchParams(window.location.search).get('mode')==='intake')setTimeout(()=>nameRef.current?.focus(),80);},[intakeOnly]);
- const load=async()=>{if(!canView||intakeOnly){setLoading(false);return;}setLoading(true);setError('');try{const token=localStorage.getItem('bitalis_access_token');const response=await fetch('/api/clients?page=1&limit=100',{headers:token?{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'}:{'Cache-Control':'no-store'},cache:'no-store'});const json=await response.json().catch(()=>({}));if(!response.ok)throw new Error(json?.error||'No pudimos cargar los clientes.');setClients(json?.data||[]);}catch(e:any){setError(e.message);}finally{setLoading(false);}};
+ const load=async()=>{if(!canView||intakeOnly){setLoading(false);return;}setLoading(true);setError('');try{const json:any=await apiClient('/api/clients?page=1&limit=100');setClients(json?.data||[]);}catch(e:any){setError(e.message||'No pudimos cargar los clientes.');}finally{setLoading(false);}};
  useEffect(()=>{if(canView&&!intakeOnly)void load();else setLoading(false);},[canView,intakeOnly]);
  const filtered=useMemo(()=>clients.filter(c=>`${c.clientNumber} ${c.firstName} ${c.lastName} ${c.phone||''}`.toLowerCase().includes(query.toLowerCase())),[clients,query]);
  const pendingTotal=useMemo(()=>clients.filter(isPending).length,[clients]),missingGpsTotal=useMemo(()=>clients.filter(c=>!hasGps(c)).length,[clients]);
