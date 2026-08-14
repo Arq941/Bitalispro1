@@ -2,7 +2,7 @@
 
 import {useEffect,useLayoutEffect} from 'react';
 import {usePathname} from 'next/navigation';
-import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
+import {resetAuthTransitionTrace,traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const watchedApi=(input:RequestInfo|URL)=>{
   const value=typeof input==='string'?input:input instanceof URL?input.toString():input.url;
@@ -42,6 +42,7 @@ export default function AuthTransitionDiagnostics(){
     window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
       const watched=watchedApi(input);
       if(!watched)return originalFetch(input,init);
+      if(watched==='auth-login')resetAuthTransitionTrace();
       const started=performance.now();
       traceAuthTransition(`${watched}-fetch-start`);
       try{
