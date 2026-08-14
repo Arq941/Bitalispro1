@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import {ClientsScreen} from '../page';
 
-export default function NewClientPage() {
-  redirect('/clients?mode=intake');
+export default function NewClientPage(){
+  return <ClientsScreen intakeOnly/>;
 }
