@@ -33,6 +33,9 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
       if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('bitalis:session-expired'));
     }
     if(!res.ok)throw friendly(res.status,body);
+    if(typeof window!=='undefined'&&path==='/api/admin/access'&&String(init.method||'GET').toUpperCase()!=='GET'){
+      window.dispatchEvent(new Event('bitalis:permissions-changed'));
+    }
     return body as T;
   }catch(err:any){
     if(retry>0 && typeof navigator!=='undefined' && navigator.onLine && err?.status!==401 && err?.status!==403) return apiClient<T>(path,{...options,retry:retry-1});
