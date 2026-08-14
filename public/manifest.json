@@ -5,11 +5,11 @@
   "icons": [
     { "src": "/bitalis-symbol.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
   ],
-  "start_url": "/dashboard",
+  "start_url": "/",
   "id": "bitalis-production-pwa",
   "scope": "/",
-  "background_color": "#F3F4F6",
-  "theme_color": "#12224A",
+  "background_color": "#F5F7F6",
+  "theme_color": "#062B24",
   "display": "standalone",
   "orientation": "portrait-primary",
   "lang": "es-MX",
