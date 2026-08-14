@@ -3,14 +3,12 @@
 import {useEffect,useMemo,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {AlertTriangle,Banknote,Boxes,ChevronRight,ClipboardList,Coins,MapPinned,Repeat2,Route,ShieldCheck,ShoppingBag,TrendingUp,UserCog,UserPlus,Users,WalletCards,Camera,Sparkles} from 'lucide-react';
-import AppShell,{useShellPermissions} from '@/components/phase15/AppShell';
+import AppShell,{useShellPermissions,useShellSessionUser} from '@/components/phase15/AppShell';
 import {apiClient} from '@/lib/phase15/apiClient';
 import {haptic} from '@/lib/ux/haptics';
 
-type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type ModuleItem=[string,string,string,any,string];
 const money=new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0});
-const readSessionUser=():User|null=>{if(typeof window==='undefined')return null;try{const raw=localStorage.getItem('bitalis_auth_user');return raw?JSON.parse(raw):null;}catch{return null;}};
 
 const sellerModules:ModuleItem[]=[['Alta rápida','Fotos + GPS + nombre','/clients/new',Camera,'clients.create'],['Nueva venta','Contado o crédito','/sales/new',ShoppingBag,'sales.create'],['Clientes','CRM y prospectos','/clients',Users,'clients.view'],['Productos','Catálogo visual','/products',Boxes,'inventory.view'],['Renovaciones','Seguimiento','/renewals',Repeat2,'renewals.view'],['Comisiones','Ventas y total','/commissions',Coins,'commissions.view']];
 const supervisorModules:ModuleItem[]=[['Alta rápida','Campo: fotos + GPS','/clients/new',Camera,'clients.create'],['Enganches','Corte y entrega diaria','/supervision/down-payments',Banknote,'sales.view'],['Renovaciones','Cartera por renovar','/renewals',Repeat2,'renewals.view'],['Autorizaciones','Pendientes del equipo','/authorizations',ShieldCheck,'sales.approve'],['Centro de control','Operación 360','/control-center',TrendingUp,'reports.view'],['Ruta','Cobranza en campo','/route',MapPinned,'route.view'],['Caja','Diferencias y arqueo','/cash',Banknote,'cash.view'],['Reportes','Equipo y zona','/reports',ClipboardList,'reports.view']];
@@ -19,11 +17,12 @@ const roleModules:Record<string,ModuleItem[]>={COBRADOR:[['Ruta','Navegar y visi
 export default function Dashboard(){
  const router=useRouter();
  const permissions=useShellPermissions();
- const[user,setUser]=useState<User|null>(()=>readSessionUser()),[portfolio,setPortfolio]=useState<any[]>([]),[sales,setSales]=useState<any[]>([]),[clients,setClients]=useState<any[]>([]),[cash,setCash]=useState<any>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const user=useShellSessionUser();
+ const[portfolio,setPortfolio]=useState<any[]>([]),[sales,setSales]=useState<any[]>([]),[clients,setClients]=useState<any[]>([]),[cash,setCash]=useState<any>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const go=(p:string)=>{haptic('tap');router.push(p)};
  const canCollections=permissions?.has('collections.view')===true,canSalesView=permissions?.has('sales.view')===true,canSalesCreate=permissions?.has('sales.create')===true,canClientsView=permissions?.has('clients.view')===true,canClientsCreate=permissions?.has('clients.create')===true,canCash=permissions?.has('cash.view')===true,canRoute=permissions?.has('route.view')===true;
 
- useEffect(()=>{const u=user||readSessionUser();if(!u){router.replace('/');return;}if(!user)setUser(u);let alive=true;setLoading(true);setError('');if(!canCollections)setPortfolio([]);if(!canSalesView)setSales([]);if(!canClientsView)setClients([]);if(!canCash)setCash(null);(async()=>{try{const [p,s,c,cs]=await Promise.allSettled([canCollections?apiClient('/api/collections/portfolio'):Promise.resolve(null),canSalesView?apiClient('/api/sales'):Promise.resolve(null),canClientsView?apiClient('/api/clients?page=1&limit=100'):Promise.resolve(null),canCash?apiClient(`/api/cash-sessions/current?userId=${encodeURIComponent(u.id)}`):Promise.resolve(null)]);if(!alive)return;if(canCollections&&p.status==='fulfilled')setPortfolio((p.value as any)?.data||[]);if(canSalesView&&s.status==='fulfilled')setSales((s.value as any)?.sales||(s.value as any)?.data||[]);if(canClientsView&&c.status==='fulfilled')setClients((c.value as any)?.data||[]);if(canCash&&cs.status==='fulfilled')setCash((cs.value as any)?.data||null);}catch(e:any){if(alive)setError(e.message);}finally{if(alive)setLoading(false);}})();return()=>{alive=false;};},[router,user,canCollections,canSalesView,canClientsView,canCash]);
+ useEffect(()=>{if(!user)return;let alive=true;setLoading(true);setError('');if(!canCollections)setPortfolio([]);if(!canSalesView)setSales([]);if(!canClientsView)setClients([]);if(!canCash)setCash(null);(async()=>{try{const [p,s,c,cs]=await Promise.allSettled([canCollections?apiClient('/api/collections/portfolio'):Promise.resolve(null),canSalesView?apiClient('/api/sales'):Promise.resolve(null),canClientsView?apiClient('/api/clients?page=1&limit=100'):Promise.resolve(null),canCash?apiClient(`/api/cash-sessions/current?userId=${encodeURIComponent(user.id)}`):Promise.resolve(null)]);if(!alive)return;if(canCollections&&p.status==='fulfilled')setPortfolio((p.value as any)?.data||[]);if(canSalesView&&s.status==='fulfilled')setSales((s.value as any)?.sales||(s.value as any)?.data||[]);if(canClientsView&&c.status==='fulfilled')setClients((c.value as any)?.data||[]);if(canCash&&cs.status==='fulfilled')setCash((cs.value as any)?.data||null);}catch(e:any){if(alive)setError(e.message);}finally{if(alive)setLoading(false);}})();return()=>{alive=false;};},[user,canCollections,canSalesView,canClientsView,canCash]);
 
  const role=String(user?.role||'').toUpperCase();
  const modules=(roleModules[role]||[]).filter(([, , , ,permission])=>permissions?.has(permission));
