@@ -1,12 +1,23 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
 
 const permissionCacheKey='bitalis_effective_permissions';
+type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
+
+function dismissAndroidKeyboard(){
+  try{
+    const active=document.activeElement;
+    if(active instanceof HTMLElement)active.blur();
+    const virtualKeyboard=(navigator as Navigator&{virtualKeyboard?:{hide?:()=>void}}).virtualKeyboard;
+    virtualKeyboard?.hide?.();
+  }catch{}
+}
 
 export default function ProductionLoginPage() {
   const router = useRouter();
@@ -33,6 +44,16 @@ export default function ProductionLoginPage() {
     }catch{return null;}
   };
 
+  const enterDashboard=(user:SessionUser,permissionCodes:string[]|null)=>{
+    dismissAndroidKeyboard();
+    flushSync(()=>{
+      primeAuthenticatedSession?.(user,permissionCodes);
+    });
+    requestAnimationFrame(()=>{
+      router.replace('/dashboard');
+    });
+  };
+
   useEffect(() => {
     setOnline(navigator.onLine);
     const onOnline = () => setOnline(true);
@@ -45,10 +66,9 @@ export default function ProductionLoginPage() {
     const rawUser = localStorage.getItem('bitalis_auth_user');
     if (token && rawUser) {
       try {
-        const storedUser=JSON.parse(rawUser);
+        const storedUser=JSON.parse(rawUser) as SessionUser;
         void primeAuthenticatedApp(token).then((permissionCodes)=>{
-          primeAuthenticatedSession?.(storedUser,permissionCodes);
-          router.replace('/dashboard');
+          enterDashboard(storedUser,permissionCodes);
         });
       } catch {}
     }
@@ -65,6 +85,7 @@ export default function ProductionLoginPage() {
     if (!online) { setError('Sin conexión. Conéctate a internet para iniciar sesión.'); return; }
     if (!email.trim() || !password) { setError('Ingresa correo y contraseña.'); return; }
 
+    dismissAndroidKeyboard();
     setLoading(true);
     setError('');
     try {
@@ -80,7 +101,7 @@ export default function ProductionLoginPage() {
 
       const accessToken = json?.accessToken || json?.access_token || json?.tokens?.accessToken;
       const refreshToken = json?.refreshToken || json?.refresh_token || json?.tokens?.refreshToken;
-      const user = json?.user;
+      const user = json?.user as SessionUser|undefined;
       if (!accessToken || !user) throw new Error('No pudimos iniciar la sesión. Intenta nuevamente.');
 
       localStorage.setItem('bitalis_access_token', accessToken);
@@ -88,9 +109,8 @@ export default function ProductionLoginPage() {
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
       const permissionCodes=await primeAuthenticatedApp(accessToken);
-      primeAuthenticatedSession?.(user,permissionCodes);
       navigator.vibrate?.([24, 30, 24]);
-      router.replace('/dashboard');
+      enterDashboard(user,permissionCodes);
     } catch (err: any) {
       navigator.vibrate?.(55);
       setError(err?.message || 'No fue posible iniciar sesión.');
