@@ -12,25 +12,52 @@ export class PermissionService {
   private static prisma = PrismaService.getInstance();
   private static initialized = false;
 
+  private static isMySql() {
+    return String(process.env.DATABASE_URL || '').toLowerCase().startsWith('mysql');
+  }
+
   private static async ensureOverrideTable() {
     if (this.initialized) return;
-    await this.prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS user_permission_overrides (
-        user_id TEXT NOT NULL,
-        permission_code TEXT NOT NULL,
-        effect TEXT NOT NULL CHECK (effect IN ('ALLOW','DENY')),
-        updated_by TEXT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (user_id, permission_code)
-      )
-    `);
-    await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id)`);
+
+    if (this.isMySql()) {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS user_permission_overrides (
+          user_id VARCHAR(191) NOT NULL,
+          permission_code VARCHAR(191) NOT NULL,
+          effect VARCHAR(16) NOT NULL,
+          updated_by VARCHAR(191) NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, permission_code),
+          INDEX idx_user_permission_overrides_user (user_id)
+        ) ENGINE=InnoDB
+      `);
+    } else {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS user_permission_overrides (
+          user_id TEXT NOT NULL,
+          permission_code TEXT NOT NULL,
+          effect TEXT NOT NULL CHECK (effect IN ('ALLOW','DENY')),
+          updated_by TEXT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, permission_code)
+        )
+      `);
+      await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id)`);
+    }
+
     this.initialized = true;
   }
 
   public static async getUserOverrides(userId: string) {
     await this.ensureOverrideTable();
+    if (this.isMySql()) {
+      return this.prisma.$queryRawUnsafe<OverrideRow[]>(
+        `SELECT user_id, permission_code, effect FROM user_permission_overrides WHERE user_id = ? ORDER BY permission_code`,
+        userId
+      );
+    }
     return this.prisma.$queryRawUnsafe<OverrideRow[]>(
       `SELECT user_id, permission_code, effect FROM user_permission_overrides WHERE user_id = $1 ORDER BY permission_code`,
       userId
@@ -42,7 +69,25 @@ export class PermissionService {
     const code = String(input.permissionCode || '').trim();
     if (!code) throw new Error('Permiso inválido.');
 
-    if (input.effect === 'INHERIT') {
+    if (this.isMySql()) {
+      if (input.effect === 'INHERIT') {
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_code = ?`,
+          input.userId,
+          code
+        );
+      } else {
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO user_permission_overrides (user_id, permission_code, effect, updated_by, updated_at)
+           VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+           ON DUPLICATE KEY UPDATE effect = VALUES(effect), updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP`,
+          input.userId,
+          code,
+          input.effect,
+          input.updatedBy || null
+        );
+      }
+    } else if (input.effect === 'INHERIT') {
       await this.prisma.$executeRawUnsafe(
         `DELETE FROM user_permission_overrides WHERE user_id = $1 AND permission_code = $2`,
         input.userId,
@@ -113,9 +158,6 @@ export class PermissionService {
     if (override?.effect === 'ALLOW') return true;
 
     const { inherited, configured } = await this.getPermissionContext(userId);
-    // Compatibilidad de producción: hasta que un rol tenga una matriz explícita,
-    // conserva el comportamiento RBAC histórico. Una DENEGACIÓN individual sí
-    // tiene efecto inmediatamente, incluso durante esta transición.
     if (!configured) return true;
     return inherited.has(code);
   }
