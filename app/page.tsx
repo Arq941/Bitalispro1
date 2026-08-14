@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
+import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 
 const permissionCacheKey='bitalis_effective_permissions';
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
@@ -30,7 +31,6 @@ export default function ProductionLoginPage() {
   const [online, setOnline] = useState(true);
 
   const primeAuthenticatedApp=async(accessToken:string):Promise<string[]|null>=>{
-    router.prefetch('/dashboard');
     try{
       const response=await fetch('/api/auth/permissions',{
         headers:{Authorization:`Bearer ${accessToken}`,'Cache-Control':'no-store'},
@@ -44,13 +44,15 @@ export default function ProductionLoginPage() {
     }catch{return null;}
   };
 
-  const enterDashboard=(user:SessionUser,permissionCodes:string[]|null)=>{
+  const enterAuthenticatedApp=(user:SessionUser,permissionCodes:string[])=>{
+    const destination=getAuthenticatedLandingRoute(permissionCodes);
+    router.prefetch(destination);
     dismissAndroidKeyboard();
     flushSync(()=>{
       primeAuthenticatedSession?.(user,permissionCodes);
     });
     requestAnimationFrame(()=>{
-      router.replace('/dashboard');
+      router.replace(destination);
     });
   };
 
@@ -61,14 +63,17 @@ export default function ProductionLoginPage() {
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
 
-    router.prefetch('/dashboard');
     const token = localStorage.getItem('bitalis_access_token');
     const rawUser = localStorage.getItem('bitalis_auth_user');
     if (token && rawUser) {
       try {
         const storedUser=JSON.parse(rawUser) as SessionUser;
         void primeAuthenticatedApp(token).then((permissionCodes)=>{
-          enterDashboard(storedUser,permissionCodes);
+          if(permissionCodes===null){
+            setError('No pudimos validar los permisos de esta sesión. Revisa tu conexión e intenta nuevamente.');
+            return;
+          }
+          enterAuthenticatedApp(storedUser,permissionCodes);
         });
       } catch {}
     }
@@ -109,8 +114,9 @@ export default function ProductionLoginPage() {
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
       const permissionCodes=await primeAuthenticatedApp(accessToken);
+      if(permissionCodes===null)throw new Error('La sesión inició, pero no pudimos validar sus permisos. Revisa tu conexión e intenta nuevamente.');
       navigator.vibrate?.([24, 30, 24]);
-      enterDashboard(user,permissionCodes);
+      enterAuthenticatedApp(user,permissionCodes);
     } catch (err: any) {
       navigator.vibrate?.(55);
       setError(err?.message || 'No fue posible iniciar sesión.');
