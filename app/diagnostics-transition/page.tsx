@@ -13,9 +13,14 @@ function analyze(rows:TraceEvent[]){
   const permission401=rows.some(row=>row.event==='auth-permissions-fetch-end'&&Number(row.details?.status)===401);
   const unload=rows.some(row=>row.event==='beforeunload'||row.event==='pagehide');
   const dashboard=rows.some(row=>row.path==='/dashboard'||String(row.details?.to||'').includes('/dashboard'));
+  const accessUnavailable=rows.some(row=>row.path==='/access-unavailable'||String(row.details?.to||'').includes('/access-unavailable'));
+  const toDashboard=rows.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/dashboard').length;
+  const toLogin=rows.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/').length;
   if(expired||permission401)return 'HALLAZGO: hubo expiración de sesión o un 401 de permisos. Esto puede ejecutar location.assign(\'/\') y producir un reload completo.';
   if(docs.size>1||unload)return `HALLAZGO: hubo cambio de documento (${docs.size} documentos). El destello no es solo React; ocurrió una navegación/reload completo.`;
-  if(dashboard)return 'HALLAZGO: Login → Dashboard ocurrió dentro del mismo documento y sin expiración registrada. El foco siguiente es repaint/layout/viewport.';
+  if(toDashboard>=2&&toLogin>=2)return `HALLAZGO: existe un bucle SPA Login ↔ Dashboard dentro del mismo documento (${toDashboard} entradas a Dashboard, ${toLogin} regresos a Login). No es repaint.`;
+  if(accessUnavailable)return 'HALLAZGO: la sesión autenticó correctamente, pero los permisos efectivos no ofrecieron una ruta privada navegable y BITALIS envió a /access-unavailable.';
+  if(dashboard)return 'HALLAZGO: Login → Dashboard ocurrió dentro del mismo documento y sin expiración ni rebote de ruta registrados. El foco siguiente es repaint/layout/viewport.';
   return 'La traza existe, pero no contiene todavía una transición completa hacia Dashboard.';
 }
 
