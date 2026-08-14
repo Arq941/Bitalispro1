@@ -35,6 +35,31 @@ const LEGACY_PERMISSION_CODES = [
   'settings.manage',
 ] as const;
 
+// A role matrix is only usable as an explicit RBAC configuration when it can
+// actually land the user on at least one current BITALIS screen. Older installs
+// can contain obsolete permission codes or only action permissions without the
+// matching screen permission. Treating those matrices as fully configured made
+// the effective-permissions endpoint return a non-navigable set and locked valid
+// users out of every module.
+const NAVIGABLE_PERMISSION_CODES = new Set<string>([
+  'dashboard.view',
+  'clients.view',
+  'clients.create',
+  'sales.view',
+  'sales.create',
+  'sales.approve',
+  'collections.view',
+  'route.view',
+  'cash.view',
+  'inventory.view',
+  'renewals.view',
+  'commissions.view',
+  'reports.view',
+  'audit.view',
+  'users.manage',
+  'settings.manage',
+]);
+
 export class PermissionService {
   private static prisma = PrismaService.getInstance();
   private static initialized = false;
@@ -159,8 +184,11 @@ export class PermissionService {
     const inherited = new Set<string>();
     let configured = false;
     for (const mapping of user.userRoles) {
-      if (mapping.role.rolePermissions.length > 0) configured = true;
-      for (const rp of mapping.role.rolePermissions) inherited.add(rp.permission.code);
+      for (const rp of mapping.role.rolePermissions) {
+        const code = rp.permission.code;
+        inherited.add(code);
+        if (NAVIGABLE_PERMISSION_CODES.has(code)) configured = true;
+      }
     }
     return { inherited, configured };
   }
@@ -169,11 +197,10 @@ export class PermissionService {
     const { inherited, configured } = await this.getPermissionContext(userId);
 
     // Keep the effective-permissions endpoint consistent with hasPermission().
-    // Legacy installations without explicit role_permissions are permissive by
-    // design. The permission registry can also be empty in those installations,
+    // Legacy installations without a usable current role matrix are permissive
+    // by design. The permission registry can also be empty in those installs,
     // so seed the response from BITALIS' built-in permission catalog as well as
-    // any registered database permissions. Returning [] here made AppShell
-    // briefly enter the denied-route state after a valid sign-in.
+    // any registered database permissions. Unknown legacy codes are preserved.
     if (!configured) {
       for (const code of LEGACY_PERMISSION_CODES) inherited.add(code);
       const registeredPermissions = await this.prisma.permission.findMany({
