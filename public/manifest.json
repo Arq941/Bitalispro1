@@ -5,7 +5,7 @@
   "icons": [
     { "src": "/bitalis-symbol.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
   ],
-  "start_url": "/dashboard",
+  "start_url": "/",
   "id": "bitalis-production-pwa",
   "scope": "/",
   "background_color": "#F6FAF8",
