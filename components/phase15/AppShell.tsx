@@ -1,6 +1,6 @@
 'use client';
 
-import {ReactNode,createContext,useCallback,useContext,useEffect,useLayoutEffect,useMemo,useState} from 'react';
+import {ReactNode,TouchEvent,createContext,useCallback,useContext,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {usePathname,useRouter} from 'next/navigation';
 import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,ReceiptText,Repeat2,Route,Settings,ShieldCheck,ShoppingCart,UserPlus,Users,WalletCards,X} from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
@@ -10,6 +10,7 @@ import {haptic} from '@/lib/ux/haptics';
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
 type ShellContextValue={setTitle:(title:string)=>void;primeAuthenticatedSession:(user:User,permissionCodes:string[]|null)=>void;permissions:Set<string>|null;user:User|null};
+type SwipeStart={x:number;y:number;at:number}|null;
 const ShellContext=createContext<ShellContextValue|null>(null);
 
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/clients',label:'Clientes',icon:Users,permission:'clients.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
@@ -25,6 +26,7 @@ const requiredPermission=(pathname:string)=>routePermissions.find(([prefix])=>pa
 const titleForPath=(pathname:string)=>routeTitles.find(([prefix])=>pathname===prefix||pathname.startsWith(`${prefix}/`))?.[1]||'BITALIS';
 const isPublicPath=(pathname:string)=>pathname==='/'||pathname==='/login';
 const samePermissions=(current:Set<string>|null,codes:string[])=>current!==null&&current.size===codes.length&&codes.every(code=>current.has(code));
+const blocksShellSwipe=(target:EventTarget|null)=>target instanceof Element&&!!target.closest('button,a,input,textarea,select,[role="button"],[data-no-swipe],.overflow-x-auto,.overflow-auto,.mapboxgl-map,.mapboxgl-canvas,.leaflet-container');
 
 export function usePrimeAuthenticatedShellSession(){
  return useContext(ShellContext)?.primeAuthenticatedSession;
@@ -53,6 +55,7 @@ function NestedShell({children,title}:{children:ReactNode;title?:string}){
 function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitle?:string}){
  const router=useRouter(),pathname=usePathname();
  const publicPath=isPublicPath(pathname);
+ const swipeStart=useRef<SwipeStart>(null);
  const[user,setUser]=useState<User|null>(null),[accountOpen,setAccountOpen]=useState(false),[loggingOut,setLoggingOut]=useState(false),[permissions,setPermissions]=useState<Set<string>|null>(null),[hydrated,setHydrated]=useState(false),[shellTitle,setShellTitle]=useState(initialTitle||titleForPath(pathname));
 
  const primeAuthenticatedSession=useCallback((nextUser:User,permissionCodes:string[]|null)=>{
@@ -107,13 +110,29 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  const deniedFallback=useMemo(()=>permissions?getAuthenticatedLandingRoute(Array.from(permissions)):'/access-unavailable',[permissions]);
  useEffect(()=>{if(!denied)return;if(pathname!==deniedFallback)router.replace(deniedFallback);},[denied,deniedFallback,pathname,router]);
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
+ const onSwipeStart=(event:TouchEvent<HTMLDivElement>)=>{
+  if(!privateReady||accountOpen||nav.length<2||event.touches.length!==1||blocksShellSwipe(event.target)){swipeStart.current=null;return;}
+  const touch=event.touches[0];
+  swipeStart.current={x:touch.clientX,y:touch.clientY,at:performance.now()};
+ };
+ const onSwipeEnd=(event:TouchEvent<HTMLDivElement>)=>{
+  const start=swipeStart.current;swipeStart.current=null;
+  if(!start||!privateReady||accountOpen||nav.length<2||event.changedTouches.length!==1)return;
+  const touch=event.changedTouches[0],dx=touch.clientX-start.x,dy=touch.clientY-start.y,duration=performance.now()-start.at;
+  if(duration>750||Math.abs(dx)<64||Math.abs(dx)<=Math.abs(dy)*1.25)return;
+  const currentIndex=nav.findIndex(item=>item.href==='/dashboard'?pathname===item.href:pathname===item.href||pathname.startsWith(`${item.href}/`));
+  if(currentIndex<0)return;
+  const nextIndex=dx<0?currentIndex+1:currentIndex-1;
+  if(nextIndex<0||nextIndex>=nav.length)return;
+  go(nav[nextIndex].href);
+ };
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
  const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
  const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle,primeAuthenticatedSession,permissions,user}),[primeAuthenticatedSession,permissions,user]);
  const privateReady=!publicPath&&hydrated&&user!==null;
  const content=publicPath?children:!hydrated||user===null||permissions===null?<AppLoading/>:denied?<div className="mx-auto max-w-md p-6 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50"><ShieldCheck className="h-8 w-8 text-[var(--bitalis-action)]"/></div><h2 className="mt-3 font-black text-[var(--bitalis-primary)]">Acceso no disponible</h2><p className="mt-1 text-sm text-slate-500">Este módulo no está habilitado para tu usuario.</p></div>:children;
 
- return <ShellContext.Provider value={contextValue}><div className={`bitalis-app-shell min-h-[100svh] text-[var(--bitalis-text)] ${privateReady?'pb-24':''}`} data-shell-mode={publicPath?'public':'private'}>
+ return <ShellContext.Provider value={contextValue}><div className={`bitalis-app-shell min-h-[100svh] text-[var(--bitalis-text)] ${privateReady?'pb-24':''}`} data-shell-mode={publicPath?'public':'private'} onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} onTouchCancel={()=>{swipeStart.current=null;}}>
   <header className={privateReady?'bitalis-safe-top sticky top-0 z-40 border-b border-[var(--bitalis-border)] bg-white/96 shadow-[0_6px_22px_rgba(6,43,36,.06)] backdrop-blur-xl':'hidden'}><div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3"><div className="flex min-w-0 items-center gap-2.5 sm:gap-3"><BitalisLogo size="md" variant="light"/><div className="min-w-0"><p className="text-[8px] font-black uppercase tracking-[.12em] text-[var(--bitalis-action-dark)] sm:text-[10px] sm:tracking-[.14em]">{role||'BITALIS'}</p><h1 className="max-w-[125px] truncate text-xs font-black text-[var(--bitalis-primary)] min-[390px]:max-w-[160px] sm:max-w-none sm:text-sm">{shellTitle}</h1></div></div><div className="flex items-center gap-1.5"><button onClick={()=>go('/notifications')} className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--bitalis-border)] bg-white text-[var(--bitalis-primary)] shadow-sm sm:h-11 sm:w-11" aria-label="Notificaciones"><Bell className="h-5 w-5"/></button><button onClick={()=>{haptic('tap');setAccountOpen(true);}} className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--bitalis-primary)] px-2 text-[10px] font-black text-white shadow-sm sm:h-11 sm:min-w-11" aria-label="Cuenta y sesión">{initials}</button></div></div></header>
   <main className="min-h-0">{content}</main>
   <nav className={privateReady&&nav.length>0?'bitalis-safe-bottom fixed inset-x-0 bottom-0 z-50 border-t border-[var(--bitalis-border)] bg-white/98 px-2 pt-2 shadow-[0_-12px_30px_rgba(6,43,36,.10)] backdrop-blur-xl':'hidden'} aria-label="Navegación principal"><div className={`mx-auto grid max-w-xl gap-1 ${nav.length===1?'grid-cols-1':nav.length===2?'grid-cols-2':nav.length===3?'grid-cols-3':nav.length===4?'grid-cols-4':'grid-cols-5'}`}>{nav.map(({href,label,icon:Icon})=>{const active=href==='/dashboard'?pathname===href:pathname.startsWith(href);return <button key={href} onClick={()=>go(href)} aria-current={active?'page':undefined} className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[9px] font-black focus:outline-none focus:ring-2 focus:ring-[var(--bitalis-action)] sm:text-[10px] ${active?'bg-[var(--bitalis-primary)] text-white shadow-md shadow-emerald-950/10':'text-slate-500'}`}><Icon className="h-5 w-5 shrink-0"/><span className="max-w-full truncate">{label}</span></button>})}</div></nav>
