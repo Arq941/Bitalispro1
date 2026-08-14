@@ -8,7 +8,7 @@ import {haptic} from '@/lib/ux/haptics';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
-type ShellContextValue={setTitle:(title?:string)=>void};
+type ShellContextValue={setTitle:(title:string)=>void};
 const ShellContext=createContext<ShellContextValue|null>(null);
 
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/clients',label:'Clientes',icon:Users,permission:'clients.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
@@ -82,7 +82,7 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
  const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
- const contextValue=useMemo(()=>({setTitle:setShellTitle}),[]);
+ const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle}),[]);
 
  if(publicPath)return <ShellContext.Provider value={contextValue}>{children}</ShellContext.Provider>;
  if(!hydrated)return <BootShell/>;
