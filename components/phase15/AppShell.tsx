@@ -8,7 +8,7 @@ import {haptic} from '@/lib/ux/haptics';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
-type ShellContextValue={setTitle:(title:string)=>void;primeAuthenticatedSession:(user:User,permissionCodes:string[]|null)=>void;permissions:Set<string>|null};
+type ShellContextValue={setTitle:(title:string)=>void;primeAuthenticatedSession:(user:User,permissionCodes:string[]|null)=>void;permissions:Set<string>|null;user:User|null};
 const ShellContext=createContext<ShellContextValue|null>(null);
 
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/clients',label:'Clientes',icon:Users,permission:'clients.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
@@ -31,6 +31,10 @@ export function usePrimeAuthenticatedShellSession(){
 
 export function useShellPermissions(){
  return useContext(ShellContext)?.permissions??null;
+}
+
+export function useShellSessionUser(){
+ return useContext(ShellContext)?.user??null;
 }
 
 export default function AppShell({children,title}:{children:ReactNode;title?:string}){
@@ -61,15 +65,20 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   if(publicPath){setHydrated(true);return;}
   try{
    const raw=localStorage.getItem('bitalis_auth_user');
-   if(raw)setUser(JSON.parse(raw));
+   setUser(raw?JSON.parse(raw):null);
    const cached=sessionStorage.getItem(permissionCacheKey);
    if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed))setPermissions(prev=>samePermissions(prev,parsed.map(String))?prev:new Set(parsed.map(String)));}
-  }catch{}
+  }catch{setUser(null);}
   setHydrated(true);
  },[publicPath]);
 
  useEffect(()=>{
-  if(!hydrated||publicPath)return;
+  if(publicPath||!hydrated||user)return;
+  router.replace('/');
+ },[publicPath,hydrated,user,router]);
+
+ useEffect(()=>{
+  if(!hydrated||publicPath||!user)return;
   const refreshPermissions=async()=>{
    const token=localStorage.getItem('bitalis_access_token');
    if(!token){setPermissions(prev=>prev?.size===0?prev:new Set());sessionStorage.removeItem(permissionCacheKey);return;}
@@ -89,18 +98,18 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   window.addEventListener('focus',onFocus);
   window.addEventListener('bitalis:permissions-changed',onChanged);
   return()=>{window.removeEventListener('focus',onFocus);window.removeEventListener('bitalis:permissions-changed',onChanged);};
- },[hydrated,publicPath]);
+ },[hydrated,publicPath,user]);
 
  const role=(user?.role||'').toUpperCase();
  const nav=useMemo(()=>{const base=menus[role]||[];if(!permissions)return[];return base.filter(item=>permissions.has(item.permission));},[role,permissions]);
- const needed=requiredPermission(pathname);const denied=!publicPath&&permissions!==null&&!!needed&&!permissions.has(needed);
+ const needed=requiredPermission(pathname);const denied=!publicPath&&user!==null&&permissions!==null&&!!needed&&!permissions.has(needed);
  useEffect(()=>{if(!denied)return;const fallback=nav[0]?.href||'/';if(pathname!==fallback)router.replace(fallback);},[denied,nav,pathname,router]);
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
  const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
- const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle,primeAuthenticatedSession,permissions}),[primeAuthenticatedSession,permissions]);
- const privateReady=!publicPath&&hydrated;
- const content=publicPath?children:!hydrated||permissions===null?<AppLoading/>:denied?<div className="mx-auto max-w-md p-6 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50"><ShieldCheck className="h-8 w-8 text-[var(--bitalis-action)]"/></div><h2 className="mt-3 font-black text-[var(--bitalis-primary)]">Acceso no disponible</h2><p className="mt-1 text-sm text-slate-500">Este módulo no está habilitado para tu usuario.</p></div>:children;
+ const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle,primeAuthenticatedSession,permissions,user}),[primeAuthenticatedSession,permissions,user]);
+ const privateReady=!publicPath&&hydrated&&user!==null;
+ const content=publicPath?children:!hydrated||user===null||permissions===null?<AppLoading/>:denied?<div className="mx-auto max-w-md p-6 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50"><ShieldCheck className="h-8 w-8 text-[var(--bitalis-action)]"/></div><h2 className="mt-3 font-black text-[var(--bitalis-primary)]">Acceso no disponible</h2><p className="mt-1 text-sm text-slate-500">Este módulo no está habilitado para tu usuario.</p></div>:children;
 
  return <ShellContext.Provider value={contextValue}><div className={`bitalis-app-shell min-h-[100svh] text-[var(--bitalis-text)] ${privateReady?'pb-24':''}`} data-shell-mode={publicPath?'public':'private'}>
   <header className={privateReady?'bitalis-safe-top sticky top-0 z-40 border-b border-[var(--bitalis-border)] bg-white/96 shadow-[0_6px_22px_rgba(6,43,36,.06)] backdrop-blur-xl':'hidden'}><div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3"><div className="flex min-w-0 items-center gap-2.5 sm:gap-3"><BitalisLogo size="md" variant="light"/><div className="min-w-0"><p className="text-[8px] font-black uppercase tracking-[.12em] text-[var(--bitalis-action-dark)] sm:text-[10px] sm:tracking-[.14em]">{role||'BITALIS'}</p><h1 className="max-w-[125px] truncate text-xs font-black text-[var(--bitalis-primary)] min-[390px]:max-w-[160px] sm:max-w-none sm:text-sm">{shellTitle}</h1></div></div><div className="flex items-center gap-1.5"><button onClick={()=>go('/notifications')} className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--bitalis-border)] bg-white text-[var(--bitalis-primary)] shadow-sm sm:h-11 sm:w-11" aria-label="Notificaciones"><Bell className="h-5 w-5"/></button><button onClick={()=>{haptic('tap');setAccountOpen(true);}} className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--bitalis-primary)] px-2 text-[10px] font-black text-white shadow-sm sm:h-11 sm:min-w-11" aria-label="Cuenta y sesión">{initials}</button></div></div></header>
