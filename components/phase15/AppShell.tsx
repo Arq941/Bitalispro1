@@ -1,6 +1,6 @@
 'use client';
 
-import {ReactNode,createContext,useContext,useEffect,useLayoutEffect,useMemo,useState} from 'react';
+import {ReactNode,createContext,useCallback,useContext,useEffect,useLayoutEffect,useMemo,useState} from 'react';
 import {usePathname,useRouter} from 'next/navigation';
 import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,ReceiptText,Repeat2,Route,Settings,ShieldCheck,ShoppingCart,UserPlus,Users,WalletCards,X} from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
@@ -8,7 +8,7 @@ import {haptic} from '@/lib/ux/haptics';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
-type ShellContextValue={setTitle:(title:string)=>void};
+type ShellContextValue={setTitle:(title:string)=>void;primeAuthenticatedSession:(user:User,permissionCodes:string[]|null)=>void};
 const ShellContext=createContext<ShellContextValue|null>(null);
 
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/clients',label:'Clientes',icon:Users,permission:'clients.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
@@ -23,6 +23,10 @@ const routeTitles:[string,string][]=[['/settings/users','Usuarios'],['/settings'
 const requiredPermission=(pathname:string)=>routePermissions.find(([prefix])=>pathname===prefix||pathname.startsWith(`${prefix}/`))?.[1];
 const titleForPath=(pathname:string)=>routeTitles.find(([prefix])=>pathname===prefix||pathname.startsWith(`${prefix}/`))?.[1]||'BITALIS';
 const isPublicPath=(pathname:string)=>pathname==='/'||pathname==='/login';
+
+export function usePrimeAuthenticatedShellSession(){
+ return useContext(ShellContext)?.primeAuthenticatedSession;
+}
 
 export default function AppShell({children,title}:{children:ReactNode;title?:string}){
  const parent=useContext(ShellContext);
@@ -40,6 +44,12 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  const router=useRouter(),pathname=usePathname();
  const publicPath=isPublicPath(pathname);
  const[user,setUser]=useState<User|null>(null),[accountOpen,setAccountOpen]=useState(false),[loggingOut,setLoggingOut]=useState(false),[permissions,setPermissions]=useState<Set<string>|null>(null),[hydrated,setHydrated]=useState(false),[shellTitle,setShellTitle]=useState(initialTitle||titleForPath(pathname));
+
+ const primeAuthenticatedSession=useCallback((nextUser:User,permissionCodes:string[]|null)=>{
+  setUser(nextUser);
+  setPermissions(permissionCodes===null?null:new Set(permissionCodes.map(String)));
+  setHydrated(true);
+ },[]);
 
  useLayoutEffect(()=>{setShellTitle(titleForPath(pathname));},[pathname]);
  useLayoutEffect(()=>{
@@ -82,7 +92,7 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
  const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
- const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle}),[]);
+ const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle,primeAuthenticatedSession}),[primeAuthenticatedSession]);
 
  if(publicPath)return <ShellContext.Provider value={contextValue}>{children}</ShellContext.Provider>;
  if(!hydrated)return <BootShell/>;

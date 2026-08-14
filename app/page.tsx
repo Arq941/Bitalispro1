@@ -4,11 +4,13 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
+import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
 
 const permissionCacheKey='bitalis_effective_permissions';
 
 export default function ProductionLoginPage() {
   const router = useRouter();
+  const primeAuthenticatedSession = usePrimeAuthenticatedShellSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,18 +18,19 @@ export default function ProductionLoginPage() {
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
 
-  const primeAuthenticatedApp=async(accessToken:string)=>{
+  const primeAuthenticatedApp=async(accessToken:string):Promise<string[]|null>=>{
     router.prefetch('/dashboard');
     try{
       const response=await fetch('/api/auth/permissions',{
         headers:{Authorization:`Bearer ${accessToken}`,'Cache-Control':'no-store'},
         cache:'no-store',
       });
-      if(!response.ok)return;
+      if(!response.ok)return null;
       const json=await response.json().catch(()=>({}));
       const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
       sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
-    }catch{}
+      return codes;
+    }catch{return null;}
   };
 
   useEffect(() => {
@@ -39,9 +42,15 @@ export default function ProductionLoginPage() {
 
     router.prefetch('/dashboard');
     const token = localStorage.getItem('bitalis_access_token');
-    const user = localStorage.getItem('bitalis_auth_user');
-    if (token && user) {
-      void primeAuthenticatedApp(token).finally(()=>router.replace('/dashboard'));
+    const rawUser = localStorage.getItem('bitalis_auth_user');
+    if (token && rawUser) {
+      try {
+        const storedUser=JSON.parse(rawUser);
+        void primeAuthenticatedApp(token).then((permissionCodes)=>{
+          primeAuthenticatedSession?.(storedUser,permissionCodes);
+          router.replace('/dashboard');
+        });
+      } catch {}
     }
 
     return () => {
@@ -49,7 +58,7 @@ export default function ProductionLoginPage() {
       window.removeEventListener('offline', onOffline);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, primeAuthenticatedSession]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -78,7 +87,8 @@ export default function ProductionLoginPage() {
       if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
-      await primeAuthenticatedApp(accessToken);
+      const permissionCodes=await primeAuthenticatedApp(accessToken);
+      primeAuthenticatedSession?.(user,permissionCodes);
       navigator.vibrate?.([24, 30, 24]);
       router.replace('/dashboard');
     } catch (err: any) {
