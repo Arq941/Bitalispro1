@@ -6,21 +6,37 @@ import {readAuthTransitionTrace} from '@/lib/ux/authTransitionTrace';
 
 type TraceEvent=ReturnType<typeof readAuthTransitionTrace>[number];
 
+function latestActivityCluster(rows:TraceEvent[]){
+  if(rows.length<2)return rows;
+  let start=0;
+  for(let i=1;i<rows.length;i++){
+    const gap=new Date(rows[i].at).getTime()-new Date(rows[i-1].at).getTime();
+    if(gap>60000)start=i;
+  }
+  return rows.slice(start);
+}
+
 function analyze(rows:TraceEvent[]){
   if(!rows.length)return 'Aún no hay una reproducción registrada. Vuelve a Login, realiza Login → Dashboard una vez y abre DIAG inmediatamente después.';
-  const docs=new Set(rows.map(row=>row.doc));
-  const expired=rows.some(row=>row.event==='session-expired-event'||row.event==='pwa-session-expired-location-assign');
-  const permission401=rows.some(row=>row.event==='auth-permissions-fetch-end'&&Number(row.details?.status)===401);
-  const unload=rows.some(row=>row.event==='beforeunload'||row.event==='pagehide');
-  const dashboard=rows.some(row=>row.path==='/dashboard'||String(row.details?.to||'').includes('/dashboard'));
-  const accessUnavailable=rows.some(row=>row.path==='/access-unavailable'||String(row.details?.to||'').includes('/access-unavailable'));
-  const toDashboard=rows.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/dashboard').length;
-  const toLogin=rows.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/').length;
+  const scope=latestActivityCluster(rows);
+  const docs=new Set(scope.map(row=>row.doc));
+  const expired=scope.some(row=>row.event==='session-expired-event'||row.event==='pwa-session-expired-location-assign');
+  const permission401=scope.some(row=>row.event==='auth-permissions-fetch-end'&&Number(row.details?.status)===401);
+  const unload=scope.some(row=>row.event==='beforeunload'||row.event==='pagehide');
+  const dashboard=scope.some(row=>row.path==='/dashboard'||String(row.details?.to||'').includes('/dashboard'));
+  const accessUnavailable=scope.some(row=>row.path==='/access-unavailable'||String(row.details?.to||'').includes('/access-unavailable'));
+  const toDashboard=scope.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/dashboard').length;
+  const toLogin=scope.filter(row=>row.event==='history-replace-state'&&String(row.details?.to||'')==='/').length;
+  const loginAttempt=scope.some(row=>row.event==='auth-login-fetch-start');
+  const restoredEntry=scope.some(row=>row.event==='auth-enter-router-replace'&&row.details?.source==='restore');
   if(expired||permission401)return 'HALLAZGO: hubo expiración de sesión o un 401 de permisos. Esto puede ejecutar location.assign(\'/\') y producir un reload completo.';
-  if(docs.size>1||unload)return `HALLAZGO: hubo cambio de documento (${docs.size} documentos). El destello no es solo React; ocurrió una navegación/reload completo.`;
   if(toDashboard>=2&&toLogin>=2)return `HALLAZGO: existe un bucle SPA Login ↔ Dashboard dentro del mismo documento (${toDashboard} entradas a Dashboard, ${toLogin} regresos a Login). No es repaint.`;
   if(accessUnavailable)return 'HALLAZGO: la sesión autenticó correctamente, pero los permisos efectivos no ofrecieron una ruta privada navegable y BITALIS envió a /access-unavailable.';
-  if(dashboard)return 'HALLAZGO: Login → Dashboard ocurrió dentro del mismo documento y sin expiración ni rebote de ruta registrados. El foco siguiente es repaint/layout/viewport.';
+  if(docs.size>1||unload){
+    if(restoredEntry||!loginAttempt)return `HALLAZGO: la reapertura/restauración de sesión produjo una navegación de documento (${docs.size} documentos en la actividad reciente). El foco es el arranque frío, no el Login manual.`;
+    return `HALLAZGO: hubo cambio de documento durante Login (${docs.size} documentos en la actividad reciente). El destello no es solo React; ocurrió una navegación/reload completo.`;
+  }
+  if(dashboard)return 'HALLAZGO: la entrada a Dashboard ocurrió dentro del mismo documento y sin expiración ni rebote de ruta registrados.';
   return 'La traza existe, pero no contiene todavía una transición completa hacia Dashboard.';
 }
 

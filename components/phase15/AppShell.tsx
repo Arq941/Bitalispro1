@@ -4,6 +4,7 @@ import {ReactNode,createContext,useCallback,useContext,useEffect,useLayoutEffect
 import {usePathname,useRouter} from 'next/navigation';
 import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,ReceiptText,Repeat2,Route,Settings,ShieldCheck,ShoppingCart,UserPlus,Users,WalletCards,X} from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
+import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 import {haptic} from '@/lib/ux/haptics';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
@@ -103,7 +104,8 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  const role=(user?.role||'').toUpperCase();
  const nav=useMemo(()=>{const base=menus[role]||[];if(!permissions)return[];return base.filter(item=>permissions.has(item.permission));},[role,permissions]);
  const needed=requiredPermission(pathname);const denied=!publicPath&&user!==null&&permissions!==null&&!!needed&&!permissions.has(needed);
- useEffect(()=>{if(!denied)return;const fallback=nav[0]?.href||'/';if(pathname!==fallback)router.replace(fallback);},[denied,nav,pathname,router]);
+ const deniedFallback=useMemo(()=>permissions?getAuthenticatedLandingRoute(Array.from(permissions)):'/access-unavailable',[permissions]);
+ useEffect(()=>{if(!denied)return;if(pathname!==deniedFallback)router.replace(deniedFallback);},[denied,deniedFallback,pathname,router]);
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
  const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
