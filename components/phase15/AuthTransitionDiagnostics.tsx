@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect,useLayoutEffect} from 'react';
-import {usePathname} from 'next/navigation';
+import {usePathname,useRouter} from 'next/navigation';
 import {resetAuthTransitionTrace,traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const watchedApi=(input:RequestInfo|URL)=>{
@@ -16,6 +16,7 @@ const watchedApi=(input:RequestInfo|URL)=>{
 
 export default function AuthTransitionDiagnostics(){
   const pathname=usePathname();
+  const router=useRouter();
 
   useLayoutEffect(()=>{
     traceAuthTransition('pathname-layout',{pathname});
@@ -88,5 +89,11 @@ export default function AuthTransitionDiagnostics(){
     };
   },[]);
 
-  return null;
+  if(pathname==='/diagnostics-transition')return null;
+  return <button
+    type="button"
+    onClick={()=>router.push('/diagnostics-transition')}
+    className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-2 z-[220] min-h-10 rounded-full border border-emerald-200 bg-white/95 px-3 text-[10px] font-black tracking-[.08em] text-[var(--bitalis-primary)] shadow-lg backdrop-blur"
+    aria-label="Abrir diagnóstico de transición"
+  >DIAG</button>;
 }
