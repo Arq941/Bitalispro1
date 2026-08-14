@@ -8,7 +8,7 @@
   "start_url": "/",
   "id": "bitalis-production-pwa",
   "scope": "/",
-  "background_color": "#F6FAF8",
+  "background_color": "#F5F7F6",
   "theme_color": "#062B24",
   "display": "standalone",
   "orientation": "portrait-primary",
