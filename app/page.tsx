@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 
+const permissionCacheKey='bitalis_effective_permissions';
+
 export default function ProductionLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -14,6 +16,20 @@ export default function ProductionLoginPage() {
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
 
+  const primeAuthenticatedApp=async(accessToken:string)=>{
+    router.prefetch('/dashboard');
+    try{
+      const response=await fetch('/api/auth/permissions',{
+        headers:{Authorization:`Bearer ${accessToken}`,'Cache-Control':'no-store'},
+        cache:'no-store',
+      });
+      if(!response.ok)return;
+      const json=await response.json().catch(()=>({}));
+      const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
+      sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
+    }catch{}
+  };
+
   useEffect(() => {
     setOnline(navigator.onLine);
     const onOnline = () => setOnline(true);
@@ -21,32 +37,18 @@ export default function ProductionLoginPage() {
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
 
-    const removeLegacyPwa = async () => {
-      try {
-        if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registrations.map((registration) => registration.unregister()));
-        }
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map((key) => caches.delete(key)));
-        }
-        ['pwa_session_user','pwa_session_tab','pwa_clientes','pwa_ventas','pwa_abonos','pwa_cortes','pwa_productos','pwa_zonas','pwa_usuarios','pwa_audit_logs','pwa_clean_db_v2','bitalis_guide_disabled'].forEach((key) => localStorage.removeItem(key));
-      } catch (cleanupError) {
-        console.warn('No fue posible limpiar completamente el caché legacy:', cleanupError);
-      }
-    };
-
-    removeLegacyPwa().finally(() => {
-      const token = localStorage.getItem('bitalis_access_token');
-      const user = localStorage.getItem('bitalis_auth_user');
-      if (token && user) router.replace('/dashboard');
-    });
+    router.prefetch('/dashboard');
+    const token = localStorage.getItem('bitalis_access_token');
+    const user = localStorage.getItem('bitalis_auth_user');
+    if (token && user) {
+      void primeAuthenticatedApp(token).finally(()=>router.replace('/dashboard'));
+    }
 
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const submit = async (event: FormEvent) => {
@@ -75,27 +77,27 @@ export default function ProductionLoginPage() {
       localStorage.setItem('bitalis_access_token', accessToken);
       if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
+
+      await primeAuthenticatedApp(accessToken);
       navigator.vibrate?.([24, 30, 24]);
       router.replace('/dashboard');
     } catch (err: any) {
       navigator.vibrate?.(55);
       setError(err?.message || 'No fue posible iniciar sesión.');
-    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#F3F4F6] px-4 py-6 text-[#2B2B2B] sm:py-10">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-gradient-to-b from-[#00A86B]/10 to-transparent" />
-      <section className="relative w-full max-w-[430px] overflow-hidden rounded-[32px] border border-white bg-white p-5 shadow-[0_24px_70px_rgba(18,34,74,.13)] sm:p-8">
+    <main className="relative flex min-h-[100svh] items-center justify-center overflow-hidden bg-[var(--bitalis-bg)] px-4 py-6 text-[var(--bitalis-text)] sm:py-10">
+      <section className="relative w-full max-w-[430px] overflow-hidden rounded-[30px] border border-[var(--bitalis-border)] bg-white p-5 shadow-[0_18px_48px_rgba(6,43,36,.10)] sm:p-8">
         <div className="mb-7 flex flex-col items-center text-center">
           <BitalisLogo size="lg" />
           <div className={`mt-5 inline-flex min-h-8 items-center gap-2 rounded-full px-3 text-[10px] font-black uppercase tracking-[.14em] ${online?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>
             {online ? <Wifi className="h-3.5 w-3.5"/> : <WifiOff className="h-3.5 w-3.5"/>}
             {online ? 'Conectado' : 'Sin conexión'}
           </div>
-          <h1 className="mt-4 text-2xl font-black tracking-tight text-[#12224A]">Bienvenido a BITALIS</h1>
+          <h1 className="mt-4 text-2xl font-black tracking-tight text-[var(--bitalis-primary)]">Bienvenido a BITALIS</h1>
           <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">Ventas, cobranza en ruta y operación de campo en una sola aplicación.</p>
         </div>
 
@@ -103,27 +105,27 @@ export default function ProductionLoginPage() {
 
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
-            <span className="mb-2 block text-xs font-black text-[#12224A]">Correo o usuario</span>
+            <span className="mb-2 block text-xs font-black text-[var(--bitalis-primary)]">Correo o usuario</span>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="usuario@bitalis.mx" />
+              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-4 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10" placeholder="usuario@bitalis.mx" />
             </div>
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-xs font-black text-[#12224A]">Contraseña</span>
+            <span className="mb-2 block text-xs font-black text-[var(--bitalis-primary)]">Contraseña</span>
             <div className="relative">
               <LockKeyhole className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-14 text-base outline-none transition focus:border-[#00A86B] focus:bg-white focus:ring-4 focus:ring-[#00A86B]/10" placeholder="••••••••" />
+              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-14 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10" placeholder="••••••••" />
               <button type="button" onClick={() => { navigator.vibrate?.(10); setShowPassword((value) => !value); }} className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 active:scale-90" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                 {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </div>
           </label>
 
-          <button type="submit" disabled={loading || !online} className="mt-2 flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl bg-[#00A86B] px-4 text-sm font-black text-white shadow-lg shadow-emerald-700/10 transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="submit" disabled={loading || !online} className="mt-2 flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl bg-[var(--bitalis-action)] px-4 text-sm font-black text-white shadow-[0_10px_24px_rgba(17,166,90,.18)] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50">
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ShieldCheck className="h-5 w-5" />}
-            {loading ? 'INGRESANDO…' : 'INICIAR SESIÓN'}
+            {loading ? 'PREPARANDO BITALIS…' : 'INICIAR SESIÓN'}
           </button>
         </form>
 
