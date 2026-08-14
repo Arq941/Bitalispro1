@@ -48,7 +48,7 @@
 .bitalis-android-button-tonal{background:var(--bitalis-surface-soft);color:var(--bitalis-primary)}
 .bitalis-bottom-sheet{border-radius:28px 28px 0 0;background:#fff;box-shadow:0 -18px 40px rgba(6,43,36,.14)}
 .bitalis-bottom-sheet::before{content:"";display:block;width:40px;height:4px;margin:8px auto 10px;border-radius:999px;background:#CBD5D1}
-.bitalis-app-shell{background:var(--bitalis-bg);min-height:100vh;min-height:100svh}
+.bitalis-app-shell{background:var(--bitalis-bg);min-height:100vh!important;min-height:100svh!important}
 .bitalis-loading-shimmer{background:#E7F0EB}
 @supports(padding:max(0px)){.bitalis-safe-bottom{padding-bottom:max(.75rem,env(safe-area-inset-bottom))}.bitalis-safe-top{padding-top:max(.25rem,env(safe-area-inset-top))}}
 
