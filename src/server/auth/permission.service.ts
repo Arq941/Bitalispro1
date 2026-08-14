@@ -139,7 +139,20 @@ export class PermissionService {
   }
 
   public static async getEffectivePermissionCodes(userId: string) {
-    const { inherited } = await this.getPermissionContext(userId);
+    const { inherited, configured } = await this.getPermissionContext(userId);
+
+    // Keep the effective-permissions endpoint consistent with hasPermission().
+    // Legacy installations without explicit role_permissions are permissive by
+    // design, so expose every registered permission instead of returning [].
+    // Returning an empty list made the client shell briefly render
+    // "Acceso no disponible" and redirect back to Login after a valid sign-in.
+    if (!configured) {
+      const registeredPermissions = await this.prisma.permission.findMany({
+        select: { code: true },
+      });
+      for (const permission of registeredPermissions) inherited.add(permission.code);
+    }
+
     const overrides = await this.getUserOverrides(userId);
     for (const override of overrides) {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
