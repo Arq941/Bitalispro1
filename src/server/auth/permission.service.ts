@@ -8,6 +8,33 @@ type OverrideRow = {
   effect: PermissionEffect;
 };
 
+const LEGACY_PERMISSION_CODES = [
+  'dashboard.view',
+  'clients.view',
+  'clients.create',
+  'clients.edit',
+  'clients.delete',
+  'sales.view',
+  'sales.create',
+  'sales.approve',
+  'collections.view',
+  'collections.collect',
+  'route.view',
+  'route.manage',
+  'cash.view',
+  'cash.operate',
+  'cash.close',
+  'inventory.view',
+  'inventory.manage',
+  'renewals.view',
+  'renewals.manage',
+  'commissions.view',
+  'reports.view',
+  'audit.view',
+  'users.manage',
+  'settings.manage',
+] as const;
+
 export class PermissionService {
   private static prisma = PrismaService.getInstance();
   private static initialized = false;
@@ -143,10 +170,12 @@ export class PermissionService {
 
     // Keep the effective-permissions endpoint consistent with hasPermission().
     // Legacy installations without explicit role_permissions are permissive by
-    // design, so expose every registered permission instead of returning [].
-    // Returning an empty list made the client shell briefly render
-    // "Acceso no disponible" and redirect back to Login after a valid sign-in.
+    // design. The permission registry can also be empty in those installations,
+    // so seed the response from BITALIS' built-in permission catalog as well as
+    // any registered database permissions. Returning [] here made AppShell
+    // briefly enter the denied-route state after a valid sign-in.
     if (!configured) {
+      for (const code of LEGACY_PERMISSION_CODES) inherited.add(code);
       const registeredPermissions = await this.prisma.permission.findMany({
         select: { code: true },
       });
