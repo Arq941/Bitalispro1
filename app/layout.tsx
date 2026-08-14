@@ -3,6 +3,7 @@ import './globals.css';
 import { ImageLightboxProvider } from '@/components/ImageLightboxContext';
 import PWAProvider from '@/components/phase15/PWAProvider';
 import AppShell from '@/components/phase15/AppShell';
+import RoutePrefetcher from '@/components/phase15/RoutePrefetcher';
 
 export const metadata: Metadata = {
   title: 'BITALIS • ERP CRM Cobranza en Ruta',
@@ -24,7 +25,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css" />
       </head>
       <body className="bitalis-app-shell min-h-screen overflow-x-hidden antialiased" suppressHydrationWarning>
-        <PWAProvider><ImageLightboxProvider><AppShell>{children}</AppShell></ImageLightboxProvider></PWAProvider>
+        <PWAProvider><ImageLightboxProvider><RoutePrefetcher/><AppShell>{children}</AppShell></ImageLightboxProvider></PWAProvider>
       </body>
     </html>
   );
