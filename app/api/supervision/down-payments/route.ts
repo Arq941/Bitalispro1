@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
+
+function statusFromError(error: unknown) {
+  const message = String((error as any)?.message || '');
+  if (message.includes('UNAUTHORIZED')) return 401;
+  if (message.includes('FORBIDDEN')) return 403;
+  return 400;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,6 +16,7 @@ export async function GET(req: NextRequest) {
     if (ctx.role !== 'SUPERVISORA' && ctx.role !== 'ADMIN') {
       return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 });
     }
+    await PermissionService.requirePermission(ctx.userId, 'sales.view');
 
     const fromParam = req.nextUrl.searchParams.get('from');
     const toParam = req.nextUrl.searchParams.get('to');
@@ -64,6 +73,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'No fue posible consultar enganches.' }, { status: 400 });
+    return NextResponse.json({ error: error?.message || 'No fue posible consultar enganches.' }, { status: statusFromError(error) });
   }
 }
