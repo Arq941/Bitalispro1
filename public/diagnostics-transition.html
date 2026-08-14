@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#062B24" />
+<title>BITALIS · Diagnóstico de transición</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#062B24;background:#f5f7f6}*{box-sizing:border-box}body{margin:0;padding:18px 14px 40px}.wrap{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #dfe8e4;border-radius:24px;padding:16px;box-shadow:0 10px 28px rgba(6,43,36,.08);margin-bottom:12px}h1{font-size:22px;margin:0 0 6px}h2{font-size:15px;margin:0 0 8px}p{font-size:13px;line-height:1.5;color:#53635e;margin:6px 0}.pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#e9f8ef;color:#087a42;font-size:11px;font-weight:800}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}button{min-height:50px;border:0;border-radius:16px;font-weight:900;font-size:12px;padding:10px}.primary{background:#11a65a;color:#fff}.secondary{background:#eef3f1;color:#062b24}.danger{background:#fff1f1;color:#a32424}.finding{font-weight:800;color:#062b24;background:#f0faf4;border-radius:16px;padding:12px;margin-top:10px}pre{white-space:pre-wrap;word-break:break-word;font-size:10px;line-height:1.45;background:#071f1a;color:#d9f7e5;border-radius:18px;padding:14px;max-height:54vh;overflow:auto}.muted{color:#7d8b87;font-size:11px}@media(max-width:420px){.actions{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <span class="pill">BITALIS · SOLO DIAGNÓSTICO</span>
+    <h1>Transición Login → Dashboard</h1>
+    <p>Esta pantalla no muestra contraseñas, tokens, correos ni datos de clientes. Solo eventos de navegación, render y tamaño de pantalla.</p>
+    <div id="finding" class="finding">Analizando…</div>
+    <div class="actions">
+      <button id="copy" class="primary">COPIAR DIAGNÓSTICO</button>
+      <button id="refresh" class="secondary">ACTUALIZAR</button>
+      <button id="clear" class="danger">LIMPIAR TRAZA</button>
+    </div>
+  </div>
+  <div class="card"><h2>Build servido por Hostinger</h2><pre id="build">Cargando /build-version.txt…</pre></div>
+  <div class="card"><h2>Traza</h2><p id="summary" class="muted"></p><pre id="trace">Sin eventos todavía.</pre></div>
+</div>
+<script>
+const KEY='bitalis:auth-transition-trace:v1';
+let buildText='';
+const read=()=>{try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[]}catch{return[]}};
+const format=rows=>rows.map(r=>{const d=Object.entries(r.details||{}).map(([k,v])=>`${k}=${v}`).join(' ');return `${new Date(r.at).toISOString()} +${r.t}ms doc=${String(r.doc||'').slice(0,8)} nav=${r.navType||'-'} path=${r.path} vis=${r.visibility} win=${r.innerWidth}x${r.innerHeight} vv=${r.viewportWidth??'-'}x${r.viewportHeight??'-'}@${r.viewportOffsetTop??'-'} event=${r.event}${d?' '+d:''}`}).join('\n');
+function analyze(rows){
+  if(!rows.length)return 'Aún no hay una reproducción registrada. Abre BITALIS, haz Login → Dashboard una vez y vuelve aquí.';
+  const docs=new Set(rows.map(r=>r.doc));
+  const expired=rows.some(r=>r.event==='session-expired-event'||r.event==='pwa-session-expired-location-assign');
+  const unload=rows.some(r=>r.event==='beforeunload'||r.event==='pagehide');
+  const permission401=rows.some(r=>r.event==='auth-permissions-fetch-end'&&Number(r.details?.status)===401);
+  const dashboard=rows.some(r=>r.path==='/dashboard'||String(r.details?.to||'').includes('/dashboard'));
+  if(expired||permission401)return 'HALLAZGO: la transición está disparando expiración de sesión/401. Eso puede ejecutar location.assign y producir un reload completo.';
+  if(docs.size>1||unload)return `HALLAZGO: hubo cambio de documento (${docs.size} documentos). El destello no es solo React; existe navegación/reload del documento.`;
+  if(dashboard)return 'HALLAZGO: Login → Dashboard ocurrió dentro del mismo documento y no se registró expiración. El siguiente foco es repaint/layout/viewport durante el montaje.';
+  return 'La traza existe, pero todavía no contiene una transición completa hacia Dashboard.';
+}
+async function render(){
+  const rows=read(),docs=new Set(rows.map(r=>r.doc));
+  document.getElementById('finding').textContent=analyze(rows);
+  document.getElementById('summary').textContent=`Eventos: ${rows.length} · Documentos: ${docs.size}`;
+  document.getElementById('trace').textContent=format(rows)||'Sin eventos todavía.';
+  try{buildText=await fetch('/build-version.txt',{cache:'no-store'}).then(r=>r.text());document.getElementById('build').textContent=buildText||'Sin marcador de build.'}catch{buildText='No se pudo leer /build-version.txt';document.getElementById('build').textContent=buildText}
+}
+document.getElementById('copy').onclick=async()=>{const rows=read();const text=`BITALIS DIAGNOSTICO\n${buildText}\n${analyze(rows)}\nEVENTS=${rows.length}\nDOCUMENTS=${new Set(rows.map(r=>r.doc)).size}\n\n${format(rows)}`;try{await navigator.clipboard.writeText(text);document.getElementById('copy').textContent='COPIADO ✓'}catch{prompt('Copia este diagnóstico:',text)}};
+document.getElementById('refresh').onclick=render;
+document.getElementById('clear').onclick=()=>{localStorage.removeItem(KEY);render()};
+render();
+</script>
+</body>
+</html>
