@@ -7,9 +7,11 @@ import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } f
 import BitalisLogo from '@/components/BitalisLogo';
 import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
 import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
+import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const permissionCacheKey='bitalis_effective_permissions';
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
+type EntrySource='login'|'restore';
 
 function dismissAndroidKeyboard(){
   try{
@@ -18,6 +20,15 @@ function dismissAndroidKeyboard(){
     const virtualKeyboard=(navigator as Navigator&{virtualKeyboard?:{hide?:()=>void}}).virtualKeyboard;
     virtualKeyboard?.hide?.();
   }catch{}
+}
+
+const nextPaint=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+async function waitForColdRouter(){
+  if(document.readyState!=='complete'){
+    await new Promise<void>(resolve=>window.addEventListener('load',()=>resolve(),{once:true}));
+  }
+  await nextPaint();
+  await nextPaint();
 }
 
 export default function ProductionLoginPage() {
@@ -44,16 +55,17 @@ export default function ProductionLoginPage() {
     }catch{return null;}
   };
 
-  const enterAuthenticatedApp=(user:SessionUser,permissionCodes:string[])=>{
+  const enterAuthenticatedApp=async(user:SessionUser,permissionCodes:string[],source:EntrySource)=>{
     const destination=getAuthenticatedLandingRoute(permissionCodes);
     router.prefetch(destination);
     dismissAndroidKeyboard();
     flushSync(()=>{
       primeAuthenticatedSession?.(user,permissionCodes);
     });
-    requestAnimationFrame(()=>{
-      router.replace(destination);
-    });
+    if(source==='restore')await waitForColdRouter();
+    else await nextPaint();
+    traceAuthTransition('auth-enter-router-replace',{source,destination});
+    router.replace(destination);
   };
 
   useEffect(() => {
@@ -73,7 +85,7 @@ export default function ProductionLoginPage() {
             setError('No pudimos validar los permisos de esta sesión. Revisa tu conexión e intenta nuevamente.');
             return;
           }
-          enterAuthenticatedApp(storedUser,permissionCodes);
+          void enterAuthenticatedApp(storedUser,permissionCodes,'restore');
         });
       } catch {}
     }
@@ -97,7 +109,7 @@ export default function ProductionLoginPage() {
       navigator.vibrate?.(18);
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        headers: { 'Content-Type': 'application/json', 'Cache-Control':'no-store' },
         cache: 'no-store',
         body: JSON.stringify({ email: email.trim(), password }),
       });
@@ -116,7 +128,7 @@ export default function ProductionLoginPage() {
       const permissionCodes=await primeAuthenticatedApp(accessToken);
       if(permissionCodes===null)throw new Error('La sesión inició, pero no pudimos validar sus permisos. Revisa tu conexión e intenta nuevamente.');
       navigator.vibrate?.([24, 30, 24]);
-      enterAuthenticatedApp(user,permissionCodes);
+      await enterAuthenticatedApp(user,permissionCodes,'login');
     } catch (err: any) {
       navigator.vibrate?.(55);
       setError(err?.message || 'No fue posible iniciar sesión.');
