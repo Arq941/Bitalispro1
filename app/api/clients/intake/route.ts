@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ClientService } from '@/src/crm/client.service';
 import { getClientUserContext } from '@/src/crm/auth-helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 const MAX_FILE = 6 * 1024 * 1024;
 const TYPES = [
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     if (!['VENDEDORA', 'ADMIN', 'SUPERVISORA'].includes(user.role)) {
       return NextResponse.json({ success: false, error: 'No tienes autorización para registrar prospectos.' }, { status: 403 });
     }
+    await PermissionService.requirePermission(user.userId, 'clients.create');
 
     const form = await req.formData();
     const fullName = String(form.get('name') || '').trim();
