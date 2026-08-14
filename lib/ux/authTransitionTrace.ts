@@ -36,7 +36,7 @@ function navigationType(){
 function readStored():AuthTransitionEvent[]{
   if(typeof window==='undefined')return[];
   try{
-    const raw=sessionStorage.getItem(TRACE_KEY);
+    const raw=localStorage.getItem(TRACE_KEY);
     const parsed=raw?JSON.parse(raw):[];
     return Array.isArray(parsed)?parsed:[];
   }catch{return[];}
@@ -63,13 +63,13 @@ export function traceAuthTransition(event:string,details:AuthTransitionDetails={
     };
     const rows=readStored();
     rows.push(row);
-    sessionStorage.setItem(TRACE_KEY,JSON.stringify(rows.slice(-MAX_EVENTS)));
+    localStorage.setItem(TRACE_KEY,JSON.stringify(rows.slice(-MAX_EVENTS)));
   }catch{}
 }
 
 export function resetAuthTransitionTrace(){
   if(typeof window==='undefined')return;
-  try{sessionStorage.removeItem(TRACE_KEY);}catch{}
+  try{localStorage.removeItem(TRACE_KEY);}catch{}
   traceAuthTransition('trace-reset');
 }
 
