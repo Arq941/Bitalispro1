@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: bitalis-android-latest
+  group: bitalis-android-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.head_branch || 'manual' }}
   cancel-in-progress: true
 
 jobs:
