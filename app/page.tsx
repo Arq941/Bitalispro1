@@ -9,9 +9,11 @@ import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
 import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 import {apiClient} from '@/lib/phase15/apiClient';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
+import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 
 const permissionCacheKey='bitalis_effective_permissions';
 const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
+const webBuild=BITALIS_BUILD_COMMIT==='development'?'DEV':BITALIS_BUILD_COMMIT.slice(0,8);
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type EntrySource='login'|'restore';
 
@@ -44,6 +46,7 @@ export default function ProductionLoginPage() {
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
+  const [androidVersion,setAndroidVersion]=useState('');
 
   const primeAuthenticatedApp=async():Promise<string[]|null>=>{
     try{
@@ -69,6 +72,8 @@ export default function ProductionLoginPage() {
 
   useEffect(() => {
     setOnline(navigator.onLine);
+    const apkMatch=navigator.userAgent.match(/BITALIS-Android\/([^\s]+)/i);
+    setAndroidVersion(apkMatch?.[1]||'');
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
     window.addEventListener('online', onOnline);
@@ -194,7 +199,10 @@ export default function ProductionLoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 border-t border-slate-100 pt-5 text-center text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">BITALIS · Operación segura</div>
+        <div className="mt-6 border-t border-slate-100 pt-5 text-center">
+          <div className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">BITALIS · Operación segura</div>
+          <div className="mt-1 text-[9px] font-bold uppercase tracking-[.08em] text-slate-400">Compilación WEB {webBuild}{androidVersion?` · APK ${androidVersion}`:''}</div>
+        </div>
       </section>
     </main>
   );

@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: bitalis-android-latest
+  group: bitalis-android-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.head_branch || 'manual' }}
   cancel-in-progress: true
 
 jobs:
@@ -124,7 +124,17 @@ jobs:
           cp '${{ steps.apk.outputs.path }}' dist/BITALIS-latest.apk
           cp apk-signature.txt dist/BITALIS-signature.txt
           sha256sum dist/BITALIS-latest.apk | tee dist/BITALIS-latest.sha256
+          APK_SHA="$(cut -d' ' -f1 dist/BITALIS-latest.sha256)"
           CERT_SHA="$(sed -n 's/.*certificate SHA-256 digest: *//p' apk-signature.txt | head -n 1)"
+          cat > dist/BITALIS-android-update.json <<EOF
+          {
+            "versionCode": ${BITALIS_ANDROID_VERSION_CODE},
+            "versionName": "${BITALIS_ANDROID_VERSION_NAME}",
+            "sourceSha": "${SOURCE_SHA}",
+            "apkUrl": "https://github.com/Arq941/Bitalispro1/releases/download/bitalis-android-latest/BITALIS-latest.apk",
+            "sha256": "${APK_SHA}"
+          }
+          EOF
           cat > dist/release-notes.txt <<EOF
           BITALIS Android
 
@@ -145,6 +155,7 @@ jobs:
             dist/BITALIS-latest.apk
             dist/BITALIS-latest.sha256
             dist/BITALIS-signature.txt
+            dist/BITALIS-android-update.json
             dist/release-notes.txt
           retention-days: 30
 
@@ -169,6 +180,7 @@ jobs:
             dist/BITALIS-latest.apk \
             dist/BITALIS-latest.sha256 \
             dist/BITALIS-signature.txt \
+            dist/BITALIS-android-update.json \
             --clobber
           gh release edit bitalis-android-latest \
             --title "BITALIS Android · Latest · ${BITALIS_ANDROID_VERSION_NAME}" \

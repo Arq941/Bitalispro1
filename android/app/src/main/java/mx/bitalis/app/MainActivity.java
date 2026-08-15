@@ -2,9 +2,11 @@ package mx.bitalis.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -26,13 +28,22 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
     private static final String START_URL = "https://gold-skunk-480372.hostingersite.com/";
     private static final String APP_HOST = "gold-skunk-480372.hostingersite.com";
+    private static final String UPDATE_MANIFEST_URL = "https://github.com/Arq941/Bitalispro1/releases/download/bitalis-android-latest/BITALIS-android-update.json";
+    private static final long UPDATE_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L;
     private static final int REQ_LOCATION = 2101;
     private static final int REQ_CAMERA = 2102;
     private static final int REQ_FILE_CHOOSER = 3101;
@@ -44,6 +55,8 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingWebPermission;
     private String pendingGeoOrigin;
     private GeolocationPermissions.Callback pendingGeoCallback;
+    private boolean updateCheckRunning = false;
+    private boolean updateDialogVisible = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -145,6 +158,66 @@ public class MainActivity extends Activity {
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> openExternal(Uri.parse(url)));
+    }
+
+    private void checkForAppUpdate() {
+        if (updateCheckRunning || updateDialogVisible) return;
+        SharedPreferences preferences = getSharedPreferences("bitalis_android_updates", MODE_PRIVATE);
+        long lastSuccessfulCheck = preferences.getLong("last_successful_check", 0L);
+        if (System.currentTimeMillis() - lastSuccessfulCheck < UPDATE_CHECK_INTERVAL_MS) return;
+
+        updateCheckRunning = true;
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL endpoint = new URL(UPDATE_MANIFEST_URL);
+                connection = (HttpURLConnection) endpoint.openConnection();
+                connection.setConnectTimeout(7000);
+                connection.setReadTimeout(7000);
+                connection.setInstanceFollowRedirects(true);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "BITALIS-Android/" + getVersionName());
+                int status = connection.getResponseCode();
+                if (status < 200 || status >= 300) return;
+
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) content.append(line);
+                }
+
+                JSONObject manifest = new JSONObject(content.toString());
+                long latestVersionCode = manifest.optLong("versionCode", 0L);
+                String latestVersionName = manifest.optString("versionName", "");
+                String apkUrl = manifest.optString("apkUrl", "");
+                preferences.edit().putLong("last_successful_check", System.currentTimeMillis()).apply();
+
+                if (latestVersionCode > getVersionCode() && !apkUrl.isEmpty()) {
+                    runOnUiThread(() -> showUpdateDialog(latestVersionName, apkUrl));
+                }
+            } catch (Exception ignored) {
+                // La app sigue operando normalmente si no hay internet o GitHub no responde.
+            } finally {
+                if (connection != null) connection.disconnect();
+                updateCheckRunning = false;
+            }
+        }, "bitalis-update-check").start();
+    }
+
+    private void showUpdateDialog(String latestVersionName, String apkUrl) {
+        if (isFinishing() || isDestroyed() || updateDialogVisible) return;
+        updateDialogVisible = true;
+        String current = getVersionName();
+        String latest = latestVersionName == null || latestVersionName.isEmpty() ? "nueva" : latestVersionName;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Actualización de BITALIS")
+                .setMessage("Hay una actualización disponible (" + latest + "). Tu versión actual es " + current + ". Puedes instalarla ahora sobre esta aplicación.")
+                .setPositiveButton("ACTUALIZAR AHORA", (d, which) -> openExternal(Uri.parse(apkUrl)))
+                .setNegativeButton("MÁS TARDE", null)
+                .create();
+        dialog.setOnDismissListener(d -> updateDialogVisible = false);
+        dialog.show();
     }
 
     private boolean handleUri(Uri uri) {
@@ -334,6 +407,15 @@ public class MainActivity extends Activity {
         view.loadDataWithBaseURL(START_URL, html, "text/html", "UTF-8", null);
     }
 
+    private long getVersionCode() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return info.getLongVersionCode();
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return 1L;
+        }
+    }
+
     private String getVersionName() {
         try {
             PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -365,6 +447,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (webView != null) webView.onResume();
+        checkForAppUpdate();
     }
 
     @Override
