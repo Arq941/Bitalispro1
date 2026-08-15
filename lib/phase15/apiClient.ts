@@ -51,7 +51,8 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
   const token = accessToken();
   const finalHeaders = new Headers(headers || {});
-  if(!finalHeaders.has('Content-Type') && init.body) finalHeaders.set('Content-Type','application/json');
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
+  if(!finalHeaders.has('Content-Type') && init.body && !isFormData) finalHeaders.set('Content-Type','application/json');
   if(token) finalHeaders.set('Authorization',`Bearer ${token}`);
   if(idempotencyKey) finalHeaders.set('Idempotency-Key',idempotencyKey);
   try{
