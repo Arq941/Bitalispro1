@@ -1,5 +1,5 @@
 const {execSync}=require('node:child_process');
-const {writeFileSync}=require('node:fs');
+const {mkdirSync,writeFileSync}=require('node:fs');
 const {join}=require('node:path');
 
 function resolveCommit(){
@@ -23,9 +23,18 @@ const content=[
   'BITALIS BUILD',
   `commit=${commit}`,
   `built_at=${builtAt}`,
-  'marker=ux-legacy-cleanup',
+  'marker=client-build-coherence',
   '',
 ].join('\n');
 
 writeFileSync(join(process.cwd(),'public','build-version.txt'),content,'utf8');
+const generatedDir=join(process.cwd(),'lib','generated');
+mkdirSync(generatedDir,{recursive:true});
+const generated=[
+  '// Generado automáticamente por scripts/write-build-version.js. No editar durante el build.',
+  `export const BITALIS_BUILD_COMMIT = ${JSON.stringify(commit)};`,
+  `export const BITALIS_BUILD_AT = ${JSON.stringify(builtAt)};`,
+  '',
+].join('\n');
+writeFileSync(join(generatedDir,'buildInfo.ts'),generated,'utf8');
 console.log(`BITALIS build marker: ${commit}`);
