@@ -12,8 +12,38 @@ const friendly = (status:number, raw:any):ApiError => {
   return {status,code:raw?.code,message:raw?.error || raw?.message || 'No pudimos completar la operación.'};
 };
 
+let refreshPromise:Promise<boolean>|null=null;
+let sessionExpiredDispatched=false;
+
 function accessToken(){ if(typeof window==='undefined') return null; return localStorage.getItem('bitalis_access_token'); }
-async function refreshAccessToken(){if(typeof window==='undefined')return false;const refreshToken=localStorage.getItem('bitalis_refresh_token');if(!refreshToken)return false;try{const res=await fetch('/api/auth/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refreshToken}),cache:'no-store'});const body=await res.json().catch(()=>({}));if(!res.ok)return false;const next=body?.accessToken||body?.access_token||body?.tokens?.accessToken;const nextRefresh=body?.refreshToken||body?.refresh_token||body?.tokens?.refreshToken;if(!next)return false;localStorage.setItem('bitalis_access_token',next);if(nextRefresh)localStorage.setItem('bitalis_refresh_token',nextRefresh);return true;}catch{return false;}}
+function dispatchSessionExpiredOnce(){
+  if(typeof window==='undefined'||sessionExpiredDispatched)return;
+  sessionExpiredDispatched=true;
+  window.dispatchEvent(new CustomEvent('bitalis:session-expired'));
+}
+async function refreshAccessTokenOnce(){
+  if(typeof window==='undefined')return false;
+  const refreshToken=localStorage.getItem('bitalis_refresh_token');
+  if(!refreshToken)return false;
+  try{
+    const res=await fetch('/api/auth/refresh',{method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({refreshToken}),cache:'no-store'});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok)return false;
+    const next=body?.accessToken||body?.access_token||body?.tokens?.accessToken;
+    const nextRefresh=body?.refreshToken||body?.refresh_token||body?.tokens?.refreshToken;
+    if(!next)return false;
+    localStorage.setItem('bitalis_access_token',next);
+    if(nextRefresh)localStorage.setItem('bitalis_refresh_token',nextRefresh);
+    sessionExpiredDispatched=false;
+    return true;
+  }catch{return false;}
+}
+async function refreshAccessToken(){
+  if(refreshPromise)return refreshPromise;
+  const pending=refreshAccessTokenOnce();
+  refreshPromise=pending;
+  try{return await pending;}finally{if(refreshPromise===pending)refreshPromise=null;}
+}
 
 export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promise<T>{
   const { timeoutMs=15000, retry=0, idempotencyKey, headers, skipRefresh=false, ...init } = options;
@@ -28,9 +58,13 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
     const res = await fetch(path,{...init,headers:finalHeaders,signal:controller.signal,cache:'no-store'});
     const body = await res.json().catch(()=>({}));
     if(res.status===401 && !skipRefresh && path!=='/api/auth/refresh'){
+      const currentToken=accessToken();
+      if(token&&currentToken&&currentToken!==token){
+        return apiClient<T>(path,{...options,skipRefresh:true});
+      }
       const refreshed=await refreshAccessToken();
       if(refreshed)return apiClient<T>(path,{...options,skipRefresh:true});
-      if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('bitalis:session-expired'));
+      dispatchSessionExpiredOnce();
     }
     if(!res.ok)throw friendly(res.status,body);
     if(typeof window!=='undefined'&&path==='/api/admin/access'&&String(init.method||'GET').toUpperCase()!=='GET'){

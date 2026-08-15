@@ -1,15 +1,17 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 import {usePrimeAuthenticatedShellSession} from '@/components/phase15/AppShell';
 import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
+import {apiClient} from '@/lib/phase15/apiClient';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const permissionCacheKey='bitalis_effective_permissions';
+const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type EntrySource='login'|'restore';
 
@@ -34,21 +36,18 @@ async function waitForColdRouter(){
 export default function ProductionLoginPage() {
   const router = useRouter();
   const primeAuthenticatedSession = usePrimeAuthenticatedShellSession();
+  const restoreRun = useRef(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
 
-  const primeAuthenticatedApp=async(accessToken:string):Promise<string[]|null>=>{
+  const primeAuthenticatedApp=async():Promise<string[]|null>=>{
     try{
-      const response=await fetch('/api/auth/permissions',{
-        headers:{Authorization:`Bearer ${accessToken}`,'Cache-Control':'no-store'},
-        cache:'no-store',
-      });
-      if(!response.ok)return null;
-      const json=await response.json().catch(()=>({}));
+      const json:any=await apiClient('/api/auth/permissions',{timeoutMs:12000,retry:1});
       const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
       sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
       return codes;
@@ -77,20 +76,32 @@ export default function ProductionLoginPage() {
 
     const token = localStorage.getItem('bitalis_access_token');
     const rawUser = localStorage.getItem('bitalis_auth_user');
+    const run=++restoreRun.current;
     if (token && rawUser) {
       try {
         const storedUser=JSON.parse(rawUser) as SessionUser;
-        void primeAuthenticatedApp(token).then((permissionCodes)=>{
+        setRestoring(true);
+        setError('');
+        traceAuthTransition('auth-restore-start');
+        void primeAuthenticatedApp().then((permissionCodes)=>{
+          if(run!==restoreRun.current)return;
           if(permissionCodes===null){
-            setError('No pudimos validar los permisos de esta sesión. Revisa tu conexión e intenta nuevamente.');
+            traceAuthTransition('auth-restore-permissions-unavailable');
+            setRestoring(false);
+            setError(navigator.onLine?'No pudimos recuperar esta sesión. Puedes iniciar sesión nuevamente.':'Sin conexión. Conéctate a internet para recuperar tu sesión.');
             return;
           }
+          traceAuthTransition('auth-restore-permissions-ready',{count:permissionCodes.length});
           void enterAuthenticatedApp(storedUser,permissionCodes,'restore');
         });
-      } catch {}
+      } catch {
+        authKeys.forEach(key=>localStorage.removeItem(key));
+        sessionStorage.removeItem(permissionCacheKey);
+      }
     }
 
     return () => {
+      restoreRun.current++;
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
     };
@@ -99,12 +110,16 @@ export default function ProductionLoginPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if(restoring)return;
     if (!online) { setError('Sin conexión. Conéctate a internet para iniciar sesión.'); return; }
     if (!email.trim() || !password) { setError('Ingresa correo y contraseña.'); return; }
 
+    restoreRun.current++;
     dismissAndroidKeyboard();
     setLoading(true);
     setError('');
+    authKeys.forEach(key=>localStorage.removeItem(key));
+    sessionStorage.removeItem(permissionCacheKey);
     try {
       navigator.vibrate?.(18);
       const response = await fetch('/api/auth/login', {
@@ -125,7 +140,7 @@ export default function ProductionLoginPage() {
       if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
-      const permissionCodes=await primeAuthenticatedApp(accessToken);
+      const permissionCodes=await primeAuthenticatedApp();
       if(permissionCodes===null)throw new Error('La sesión inició, pero no pudimos validar sus permisos. Revisa tu conexión e intenta nuevamente.');
       navigator.vibrate?.([24, 30, 24]);
       await enterAuthenticatedApp(user,permissionCodes,'login');
@@ -136,6 +151,7 @@ export default function ProductionLoginPage() {
     }
   };
 
+  const busy=loading||restoring;
   return (
     <main className="relative flex min-h-[100svh] items-center justify-center overflow-hidden bg-[var(--bitalis-bg)] px-4 py-6 text-[var(--bitalis-text)] sm:py-10">
       <section className="relative w-full max-w-[430px] overflow-hidden rounded-[30px] border border-[var(--bitalis-border)] bg-white p-5 shadow-[0_18px_48px_rgba(6,43,36,.10)] sm:p-8">
@@ -149,14 +165,15 @@ export default function ProductionLoginPage() {
           <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">Ventas, cobranza en ruta y operación de campo en una sola aplicación.</p>
         </div>
 
+        {restoring&&<div aria-live="polite" className="mb-4 flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold text-emerald-800"><Loader2 className="h-4 w-4 shrink-0 animate-spin"/>Recuperando tu sesión y permisos…</div>}
         {error && <div role="alert" className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-xs font-bold leading-5 text-red-700">{error}</div>}
 
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
-            <span className="mb-2 block text-xs font-black text-[var(--bitalis-primary)]">Correo o usuario</span>
+            <span className="mb-2 block text-xs font-black text-[var(--bitalis-primary)]">Correo</span>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-4 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10" placeholder="usuario@bitalis.mx" />
+              <input disabled={busy} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-4 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10 disabled:opacity-60" placeholder="usuario@bitalis.mx" />
             </div>
           </label>
 
@@ -164,16 +181,16 @@ export default function ProductionLoginPage() {
             <span className="mb-2 block text-xs font-black text-[var(--bitalis-primary)]">Contraseña</span>
             <div className="relative">
               <LockKeyhole className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-14 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10" placeholder="••••••••" />
-              <button type="button" onClick={() => { navigator.vibrate?.(10); setShowPassword((value) => !value); }} className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 active:scale-90" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+              <input disabled={busy} type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="min-h-14 w-full rounded-2xl border border-[var(--bitalis-border)] bg-[var(--bitalis-bg)] pl-11 pr-14 text-base outline-none focus:border-[var(--bitalis-action)] focus:bg-white focus:ring-4 focus:ring-emerald-500/10 disabled:opacity-60" placeholder="••••••••" />
+              <button disabled={busy} type="button" onClick={() => { navigator.vibrate?.(10); setShowPassword((value) => !value); }} className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 active:scale-90 disabled:opacity-40" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                 {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </div>
           </label>
 
-          <button type="submit" disabled={loading || !online} className="mt-2 flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl bg-[var(--bitalis-action)] px-4 text-sm font-black text-white shadow-[0_10px_24px_rgba(17,166,90,.18)] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50">
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ShieldCheck className="h-5 w-5" />}
-            {loading ? 'PREPARANDO BITALIS…' : 'INICIAR SESIÓN'}
+          <button type="submit" disabled={busy || !online} className="mt-2 flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl bg-[var(--bitalis-action)] px-4 text-sm font-black text-white shadow-[0_10px_24px_rgba(17,166,90,.18)] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50">
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ShieldCheck className="h-5 w-5" />}
+            {restoring ? 'RECUPERANDO SESIÓN…' : loading ? 'PREPARANDO BITALIS…' : 'INICIAR SESIÓN'}
           </button>
         </form>
 

@@ -6,6 +6,7 @@ import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
 const CLEANUP_KEY='bitalis_legacy_pwa_cleanup_v2';
+const permissionCacheKey='bitalis_effective_permissions';
 
 export default function PWAProvider({children}:{children:ReactNode}){
   useEffect(()=>{
@@ -37,10 +38,12 @@ export default function PWAProvider({children}:{children:ReactNode}){
     cleanupTimer=window.setTimeout(()=>{void disableLegacyPwa();},1800);
 
     const expired=()=>{
-      traceAuthTransition('pwa-session-expired-location-assign');
+      traceAuthTransition('pwa-session-expired-location-replace');
       localStorage.removeItem('bitalis_access_token');
       localStorage.removeItem('bitalis_refresh_token');
-      location.assign('/');
+      localStorage.removeItem('bitalis_auth_user');
+      sessionStorage.removeItem(permissionCacheKey);
+      location.replace('/');
     };
     window.addEventListener('bitalis:session-expired',expired);
 
