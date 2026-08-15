@@ -1,0 +1,381 @@
+package mx.bitalis.app;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
+import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Parcelable;
+import android.provider.MediaStore;
+import android.view.Window;
+import android.webkit.CookieManager;
+import android.webkit.GeolocationPermissions;
+import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Toast;
+
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends Activity {
+    private static final String START_URL = "https://gold-skunk-480372.hostingersite.com/";
+    private static final String APP_HOST = "gold-skunk-480372.hostingersite.com";
+    private static final int REQ_LOCATION = 2101;
+    private static final int REQ_CAMERA = 2102;
+    private static final int REQ_FILE_CHOOSER = 3101;
+
+    private WebView webView;
+    private ValueCallback<Uri[]> fileCallback;
+    private Uri cameraUri;
+    private WebChromeClient.FileChooserParams pendingFileChooserParams;
+    private PermissionRequest pendingWebPermission;
+    private String pendingGeoOrigin;
+    private GeolocationPermissions.Callback pendingGeoCallback;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        Window window = getWindow();
+        window.setStatusBarColor(Color.rgb(6, 43, 36));
+        window.setNavigationBarColor(Color.WHITE);
+
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.WHITE);
+        setContentView(webView);
+        configureWebView();
+
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl(START_URL);
+        }
+    }
+
+    private void configureWebView() {
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setGeolocationEnabled(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setAllowContentAccess(true);
+        settings.setAllowFileAccess(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        settings.setSupportMultipleWindows(false);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setUserAgentString(settings.getUserAgentString() + " BITALIS-Android/" + getVersionName());
+
+        WebView.setWebContentsDebuggingEnabled(false);
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return handleUri(request.getUrl());
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return handleUri(Uri.parse(url));
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) {
+                    showOfflinePage(view);
+                }
+            }
+        });
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                if (hasLocationPermission()) {
+                    callback.invoke(origin, true, false);
+                    return;
+                }
+                pendingGeoOrigin = origin;
+                pendingGeoCallback = callback;
+                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+            }
+
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> handleWebPermissionRequest(request));
+            }
+
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileCallback != null) {
+                    fileCallback.onReceiveValue(null);
+                }
+                fileCallback = callback;
+
+                if (acceptsImage(params) && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    pendingFileChooserParams = params;
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+                } else {
+                    launchFileChooser(params, true);
+                }
+                return true;
+            }
+        });
+
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> openExternal(Uri.parse(url)));
+    }
+
+    private boolean handleUri(Uri uri) {
+        String scheme = uri.getScheme();
+        if (scheme == null) return false;
+
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            if (APP_HOST.equalsIgnoreCase(uri.getHost())) return false;
+            return openExternal(uri);
+        }
+
+        if ("intent".equalsIgnoreCase(scheme)) {
+            try {
+                Intent intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
+                startActivity(intent);
+                return true;
+            } catch (ActivityNotFoundException | URISyntaxException ignored) {
+                return true;
+            }
+        }
+
+        if ("tel".equalsIgnoreCase(scheme) || "mailto".equalsIgnoreCase(scheme) || "geo".equalsIgnoreCase(scheme) || "market".equalsIgnoreCase(scheme)) {
+            return openExternal(uri);
+        }
+
+        return false;
+    }
+
+    private boolean openExternal(Uri uri) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            return true;
+        } catch (ActivityNotFoundException error) {
+            Toast.makeText(this, "No hay una aplicación disponible para abrir este enlace.", Toast.LENGTH_SHORT).show();
+            return true;
+        }
+    }
+
+    private void handleWebPermissionRequest(PermissionRequest request) {
+        List<String> grantedResources = new ArrayList<>();
+        boolean needsCamera = false;
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    grantedResources.add(resource);
+                } else {
+                    needsCamera = true;
+                }
+            }
+        }
+
+        if (needsCamera) {
+            pendingWebPermission = request;
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+            return;
+        }
+
+        if (grantedResources.isEmpty()) request.deny();
+        else request.grant(grantedResources.toArray(new String[0]));
+    }
+
+    private boolean hasLocationPermission() {
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean acceptsImage(WebChromeClient.FileChooserParams params) {
+        String[] types = params.getAcceptTypes();
+        if (types == null || types.length == 0) return true;
+        for (String type : types) {
+            if (type == null || type.isEmpty() || type.startsWith("image/") || "*/*".equals(type)) return true;
+        }
+        return false;
+    }
+
+    private void launchFileChooser(WebChromeClient.FileChooserParams params, boolean allowCamera) {
+        Intent picker;
+        try {
+            picker = params.createIntent();
+        } catch (Exception error) {
+            picker = new Intent(Intent.ACTION_GET_CONTENT);
+            picker.addCategory(Intent.CATEGORY_OPENABLE);
+            picker.setType("*/*");
+        }
+
+        ArrayList<Intent> initialIntents = new ArrayList<>();
+        if (allowCamera && acceptsImage(params) && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            cameraUri = createCameraUri();
+            if (cameraUri != null) {
+                Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                camera.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                if (camera.resolveActivity(getPackageManager()) != null) initialIntents.add(camera);
+            }
+        }
+
+        Intent chooser = Intent.createChooser(picker, "Seleccionar archivo");
+        if (!initialIntents.isEmpty()) {
+            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, initialIntents.toArray(new Parcelable[0]));
+        }
+
+        try {
+            startActivityForResult(chooser, REQ_FILE_CHOOSER);
+        } catch (ActivityNotFoundException error) {
+            if (fileCallback != null) fileCallback.onReceiveValue(null);
+            fileCallback = null;
+            cleanupCameraUri();
+            Toast.makeText(this, "No hay una aplicación para seleccionar archivos.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private Uri createCameraUri() {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, "BITALIS_" + System.currentTimeMillis() + ".jpg");
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/BITALIS");
+        return getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+    }
+
+    private void cleanupCameraUri() {
+        if (cameraUri != null) {
+            try {
+                getContentResolver().delete(cameraUri, null, null);
+            } catch (Exception ignored) {
+            }
+            cameraUri = null;
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_FILE_CHOOSER || fileCallback == null) return;
+
+        Uri[] result = null;
+        if (resultCode == RESULT_OK && data != null) {
+            result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        }
+
+        if (resultCode == RESULT_OK && (result == null || result.length == 0) && cameraUri != null) {
+            result = new Uri[]{cameraUri};
+            cameraUri = null;
+        } else {
+            cleanupCameraUri();
+        }
+
+        fileCallback.onReceiveValue(result);
+        fileCallback = null;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == REQ_LOCATION && pendingGeoCallback != null) {
+            boolean granted = hasLocationPermission();
+            pendingGeoCallback.invoke(pendingGeoOrigin, granted, false);
+            pendingGeoCallback = null;
+            pendingGeoOrigin = null;
+            return;
+        }
+
+        if (requestCode == REQ_CAMERA) {
+            boolean granted = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+
+            if (pendingWebPermission != null) {
+                if (granted) pendingWebPermission.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                else pendingWebPermission.deny();
+                pendingWebPermission = null;
+            }
+
+            if (pendingFileChooserParams != null) {
+                WebChromeClient.FileChooserParams params = pendingFileChooserParams;
+                pendingFileChooserParams = null;
+                launchFileChooser(params, granted);
+            }
+        }
+    }
+
+    private void showOfflinePage(WebView view) {
+        String html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>" +
+                "<style>body{font-family:sans-serif;background:#f5f8f7;color:#062b24;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}" +
+                ".c{padding:28px;text-align:center;max-width:360px}h1{font-size:24px}p{color:#64748b;line-height:1.5}" +
+                "button{border:0;border-radius:16px;background:#11a65a;color:white;font-weight:800;padding:16px 24px;font-size:15px}</style></head>" +
+                "<body><div class='c'><h1>BITALIS sin conexión</h1><p>No pudimos cargar la aplicación. Revisa internet y vuelve a intentar.</p>" +
+                "<button onclick=\"location.href='" + START_URL + "'\">REINTENTAR</button></div></body></html>";
+        view.loadDataWithBaseURL(START_URL, html, "text/html", "UTF-8", null);
+    }
+
+    private String getVersionName() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return info.versionName == null ? "1" : info.versionName;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "1";
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        if (webView != null) webView.saveState(outState);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    protected void onPause() {
+        if (webView != null) webView.onPause();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.onResume();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.stopLoading();
+            webView.setWebChromeClient(null);
+            webView.setWebViewClient(null);
+            webView.destroy();
+            webView = null;
+        }
+        super.onDestroy();
+    }
+}
