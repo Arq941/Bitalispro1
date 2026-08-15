@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+def versionCodeValue = (System.getenv('BITALIS_ANDROID_VERSION_CODE') ?: '1') as Integer
+def versionNameValue = System.getenv('BITALIS_ANDROID_VERSION_NAME') ?: '1.0.0'
+def signingPath = System.getenv('BITALIS_KEYSTORE_PATH')
+def hasReleaseSigning = signingPath != null && !signingPath.trim().isEmpty()
+
+android {
+    namespace 'mx.bitalis.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'mx.bitalis.app'
+        minSdk 29
+        targetSdk 35
+        versionCode versionCodeValue
+        versionName versionNameValue
+    }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(signingPath)
+                storePassword System.getenv('BITALIS_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('BITALIS_KEY_ALIAS')
+                keyPassword System.getenv('BITALIS_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}
