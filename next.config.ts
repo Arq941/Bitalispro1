@@ -5,6 +5,27 @@ const noDocumentCache=[
   {key:'Pragma',value:'no-cache'},
   {key:'Expires',value:'0'},
 ];
+const freshEntryDocuments=[
+  '/',
+  '/dashboard',
+  '/control-center',
+  '/collections',
+  '/route',
+  '/sales',
+  '/sales/new',
+  '/clients',
+  '/clients/new',
+  '/cash',
+  '/inventory',
+  '/renewals',
+  '/commissions',
+  '/authorizations',
+  '/audit',
+  '/settings',
+  '/settings/users',
+  '/access-unavailable',
+  '/diagnostics-transition',
+];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -16,9 +37,7 @@ const nextConfig: NextConfig = {
   },
   async headers(){
     return [
-      // El acceso es también el start_url de la PWA. Debe pedir HTML fresco para no
-      // reactivar chunks de una versión anterior después de un despliegue.
-      {source:'/',headers:noDocumentCache},
+      ...freshEntryDocuments.map(source=>({source,headers:noDocumentCache})),
       // El marcador de versión es la autoridad para comprobar coherencia del bundle.
       {source:'/build-version.txt',headers:noDocumentCache},
     ];
