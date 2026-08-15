@@ -124,7 +124,7 @@ jobs:
           cp '${{ steps.apk.outputs.path }}' dist/BITALIS-latest.apk
           cp apk-signature.txt dist/BITALIS-signature.txt
           sha256sum dist/BITALIS-latest.apk | tee dist/BITALIS-latest.sha256
-          CERT_SHA="$(grep 'Signer #1 certificate SHA-256 digest:' apk-signature.txt | sed 's/.*digest: *//' | head -n 1)"
+          CERT_SHA="$(sed -n 's/.*certificate SHA-256 digest: *//p' apk-signature.txt | head -n 1)"
           cat > dist/release-notes.txt <<EOF
           BITALIS Android
 
