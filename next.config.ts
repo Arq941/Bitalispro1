@@ -1,5 +1,11 @@
 import type {NextConfig} from 'next';
 
+const noDocumentCache=[
+  {key:'Cache-Control',value:'no-store, no-cache, max-age=0, must-revalidate'},
+  {key:'Pragma',value:'no-cache'},
+  {key:'Expires',value:'0'},
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   eslint: {
@@ -7,6 +13,15 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     ignoreBuildErrors: false,
+  },
+  async headers(){
+    return [
+      // El acceso es también el start_url de la PWA. Debe pedir HTML fresco para no
+      // reactivar chunks de una versión anterior después de un despliegue.
+      {source:'/',headers:noDocumentCache},
+      // El marcador de versión es la autoridad para comprobar coherencia del bundle.
+      {source:'/build-version.txt',headers:noDocumentCache},
+    ];
   },
   // Allow access to remote image placeholder.
   images: {
@@ -23,7 +38,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
-    // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+    // Do not modify—file watching is disabled to prevent flickering during agent edits.
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {
         ignored: /.*/,
