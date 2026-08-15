@@ -58,7 +58,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Prepare optional production signing
+      - name: Prepare Android signing
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.BITALIS_ANDROID_KEYSTORE_BASE64 }}
@@ -67,17 +67,28 @@ jobs:
           KEY_PASSWORD: ${{ secrets.BITALIS_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          REQUIRE_RELEASE='false'
+          if [[ "$GITHUB_EVENT_NAME" == 'workflow_run' ]]; then
+            REQUIRE_RELEASE='true'
+          fi
+
           if [[ -n "${KEYSTORE_B64:-}" && -n "${STORE_PASSWORD:-}" && -n "${KEY_ALIAS:-}" && -n "${KEY_PASSWORD:-}" ]]; then
             mkdir -p "$RUNNER_TEMP/bitalis-signing"
             KEYSTORE_PATH="$RUNNER_TEMP/bitalis-signing/bitalis-release.jks"
             printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+            test -s "$KEYSTORE_PATH"
+            keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
             echo "BITALIS_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
             echo "BITALIS_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
             echo "BITALIS_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
             echo "BITALIS_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
             echo 'BITALIS_SIGNING_MODE=release' >> "$GITHUB_ENV"
+          elif [[ "$REQUIRE_RELEASE" == 'true' ]]; then
+            echo '::error::Faltan los cuatro GitHub Actions Secrets de firma Android. main no publicará un APK con firma temporal.'
+            exit 1
           else
             echo 'BITALIS_SIGNING_MODE=debug' >> "$GITHUB_ENV"
+            echo 'PR/test build: usando firma debug temporal; este APK no se publica como Latest.'
           fi
 
       - name: Build installable APK
@@ -95,13 +106,25 @@ jobs:
           test -s "$APK_PATH"
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH='${{ steps.apk.outputs.path }}'
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" | tee apk-signature.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' apk-signature.txt
+
       - name: Package BITALIS latest APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           cp '${{ steps.apk.outputs.path }}' dist/BITALIS-latest.apk
+          cp apk-signature.txt dist/BITALIS-signature.txt
           sha256sum dist/BITALIS-latest.apk | tee dist/BITALIS-latest.sha256
+          CERT_SHA="$(grep 'Signer #1 certificate SHA-256 digest:' apk-signature.txt | sed 's/.*digest: *//' | head -n 1)"
           cat > dist/release-notes.txt <<EOF
           BITALIS Android
 
@@ -109,6 +132,7 @@ jobs:
           Web/Main commit: ${SOURCE_SHA}
           Android build: ${GITHUB_RUN_NUMBER}
           Firma: ${BITALIS_SIGNING_MODE}
+          Certificado SHA-256: ${CERT_SHA:-no-disponible}
 
           El APK abre la producción oficial de BITALIS y conserva sesión/datos WebView entre actualizaciones de la aplicación.
           EOF
@@ -120,6 +144,7 @@ jobs:
           path: |
             dist/BITALIS-latest.apk
             dist/BITALIS-latest.sha256
+            dist/BITALIS-signature.txt
             dist/release-notes.txt
           retention-days: 30
 
@@ -130,6 +155,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ "$BITALIS_SIGNING_MODE" != 'release' ]]; then
+            echo 'No se publica Latest sin firma persistente de producción.'
+            exit 0
+          fi
           if ! gh release view bitalis-android-latest >/dev/null 2>&1; then
             gh release create bitalis-android-latest \
               --target "$SOURCE_SHA" \
@@ -139,6 +168,7 @@ jobs:
           gh release upload bitalis-android-latest \
             dist/BITALIS-latest.apk \
             dist/BITALIS-latest.sha256 \
+            dist/BITALIS-signature.txt \
             --clobber
           gh release edit bitalis-android-latest \
             --title "BITALIS Android · Latest · ${BITALIS_ANDROID_VERSION_NAME}" \
