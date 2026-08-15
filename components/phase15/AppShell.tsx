@@ -6,6 +6,7 @@ import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,ReceiptText,Repeat2,
 import BitalisLogo from '@/components/BitalisLogo';
 import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 import {apiClient} from '@/lib/phase15/apiClient';
+import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 import {haptic} from '@/lib/ux/haptics';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
@@ -85,7 +86,6 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  useEffect(()=>{
   if(!hydrated||publicPath||!user)return;
   const refreshPermissions=async()=>{
-   if(!localStorage.getItem('bitalis_access_token')){setPermissions(prev=>prev?.size===0?prev:new Set());sessionStorage.removeItem(permissionCacheKey);return;}
    try{
     const json:any=await apiClient('/api/auth/permissions',{timeoutMs:12000});
     const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
@@ -93,7 +93,8 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
     sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
    }catch(error:any){
     if(error?.status===401||error?.code==='SESSION_EXPIRED'){sessionStorage.removeItem(permissionCacheKey);return;}
-    setPermissions(prev=>prev??new Set());
+    // Conservar los permisos conocidos ante fallas transitorias. Si aún no hay
+    // permisos, el shell queda en carga y reintentará cuando la app recupere foco.
    }
   };
   void refreshPermissions();
@@ -137,10 +138,9 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   finishSwipe(touch.clientX,touch.clientY);
  };
  const onSwipeCancel=()=>{
-  const start=swipeStart.current;swipeStart.current=null;
+  const start=swipeStart.current;
   if(!start)return;
-  const dx=start.lastX-start.x,dy=start.lastY-start.y;
-  if(Math.abs(dx)>=52&&Math.abs(dx)>Math.abs(dy)*1.15)swipeConsumedUntil.current=performance.now()+250;
+  finishSwipe(start.lastX,start.lastY);
  };
  const onClickCapture=(event:ReactMouseEvent<HTMLDivElement>)=>{
   if(performance.now()>=swipeConsumedUntil.current)return;
@@ -164,7 +164,23 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  },[accountOpen,privateReady]);
 
  const initials=`${user?.firstName?.[0]||''}${user?.lastName?.[0]||''}`.toUpperCase()||'U';
- const endSession=async()=>{if(loggingOut)return;setLoggingOut(true);haptic('tap');const token=localStorage.getItem('bitalis_access_token');try{if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store'});}catch{}finally{authKeys.forEach(key=>localStorage.removeItem(key));sessionStorage.removeItem(permissionCacheKey);setUser(null);setAccountOpen(false);window.location.replace('/');}};
+ const endSession=async()=>{
+  if(loggingOut)return;
+  setLoggingOut(true);
+  haptic('tap');
+  const token=localStorage.getItem('bitalis_access_token');
+  const controller=new AbortController();
+  const timer=window.setTimeout(()=>controller.abort(),1500);
+  try{
+   if(token)await fetch('/api/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Cache-Control':'no-store'},cache:'no-store',signal:controller.signal,keepalive:true});
+  }catch{}finally{
+   window.clearTimeout(timer);
+   traceAuthTransition('logout-atomic-redirect');
+   authKeys.forEach(key=>localStorage.removeItem(key));
+   sessionStorage.removeItem(permissionCacheKey);
+   window.location.replace('/');
+  }
+ };
  const contextValue=useMemo<ShellContextValue>(()=>({setTitle:setShellTitle,primeAuthenticatedSession,permissions,user}),[primeAuthenticatedSession,permissions,user]);
  const content=publicPath?children:!hydrated||user===null||permissions===null?<AppLoading/>:denied?<div className="mx-auto max-w-md p-6 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50"><ShieldCheck className="h-8 w-8 text-[var(--bitalis-action)]"/></div><h2 className="mt-3 font-black text-[var(--bitalis-primary)]">Acceso no disponible</h2><p className="mt-1 text-sm text-slate-500">Este módulo no está habilitado para tu usuario.</p></div>:children;
 
