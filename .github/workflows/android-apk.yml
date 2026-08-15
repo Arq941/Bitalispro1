@@ -43,6 +43,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK tools
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -52,9 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SDKMANAGER="$(command -v sdkmanager)"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Prepare optional production signing
         shell: bash
@@ -100,7 +102,6 @@ jobs:
           mkdir -p dist
           cp '${{ steps.apk.outputs.path }}' dist/BITALIS-latest.apk
           sha256sum dist/BITALIS-latest.apk | tee dist/BITALIS-latest.sha256
-          SHORT_SHA="${SOURCE_SHA:0:12}"
           cat > dist/release-notes.txt <<EOF
           BITALIS Android
 
