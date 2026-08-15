@@ -1,4 +1,4 @@
 // Este archivo se sobrescribe al ejecutar `npm run build`.
-// El valor versionado permite que `tsc --noEmit` funcione antes del build.
-export const BITALIS_BUILD_COMMIT = 'development';
-export const BITALIS_BUILD_AT = 'development';
+// Los tipos explícitos permiten que `tsc --noEmit` funcione antes del build.
+export const BITALIS_BUILD_COMMIT: string = 'development';
+export const BITALIS_BUILD_AT: string = 'development';
