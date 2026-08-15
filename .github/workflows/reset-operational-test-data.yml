@@ -7,6 +7,10 @@ on:
         description: 'Escribe BORRAR_DATOS_PRUEBA_BITALIS para ejecutar una sola vez'
         required: true
         type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/bitalis-reset-once-2026-08-15.trigger'
 
 concurrency:
   group: bitalis-production-operational-reset
@@ -14,11 +18,11 @@ concurrency:
 
 jobs:
   reset-operational-data:
-    if: ${{ inputs.confirmation == 'BORRAR_DATOS_PRUEBA_BITALIS' }}
+    if: ${{ github.event_name == 'push' || inputs.confirmation == 'BORRAR_DATOS_PRUEBA_BITALIS' }}
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
-      BITALIS_RESET_CONFIRMATION: ${{ inputs.confirmation }}
+      BITALIS_RESET_CONFIRMATION: ${{ github.event_name == 'push' && 'BORRAR_DATOS_PRUEBA_BITALIS' || inputs.confirmation }}
 
     steps:
       - name: Checkout main
