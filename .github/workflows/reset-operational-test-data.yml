@@ -1,0 +1,47 @@
+name: Reset BITALIS Operational Test Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Escribe BORRAR_DATOS_PRUEBA_BITALIS para ejecutar una sola vez'
+        required: true
+        type: string
+
+concurrency:
+  group: bitalis-production-operational-reset
+  cancel-in-progress: false
+
+jobs:
+  reset-operational-data:
+    if: ${{ inputs.confirmation == 'BORRAR_DATOS_PRUEBA_BITALIS' }}
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      BITALIS_RESET_CONFIRMATION: ${{ inputs.confirmation }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify production database secret
+        shell: bash
+        run: |
+          test -n "$DATABASE_URL" || (echo 'HOSTINGER_DATABASE_URL is missing' && exit 1)
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate MySQL schema
+        run: node scripts/prepare-mysql-schema.js
+
+      - name: Generate Prisma Client for MySQL
+        run: npx prisma generate --schema=prisma/schema.mysql.prisma
+
+      - name: Reset operational test data
+        run: node scripts/reset-operational-test-data.js
