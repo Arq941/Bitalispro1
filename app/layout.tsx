@@ -9,7 +9,6 @@ import AuthTransitionDiagnostics from '@/components/phase15/AuthTransitionDiagno
 const deliveryGuard = String.raw`(()=>{
   const KEY='bitalis:delivery-recovery-attempts:v2';
   const RECOVERY_PARAM='__bitalis_recover';
-  const STARTED_AT=Date.now();
   let recovering=false;
   const primaryReady=()=>{
     try{return getComputedStyle(document.documentElement).getPropertyValue('--bitalis-primary').trim().length>0;}catch{return false;}
@@ -19,6 +18,9 @@ const deliveryGuard = String.raw`(()=>{
   const clearAttempts=()=>{try{sessionStorage.removeItem(KEY);}catch{}};
   const remember=(reason,detail)=>{
     try{localStorage.setItem('bitalis:last-bootstrap-error',JSON.stringify({at:new Date().toISOString(),reason,detail:String(detail||'').slice(0,900),path:location.pathname,href:location.href}));}catch{}
+  };
+  const rememberClientError=(reason,detail)=>{
+    try{localStorage.setItem('bitalis:last-client-error',JSON.stringify({at:new Date().toISOString(),reason,detail:String(detail||'').slice(0,1400),path:location.pathname,href:location.href}));}catch{}
   };
   const cleanupRecoveryParam=()=>{
     try{
@@ -90,17 +92,25 @@ const deliveryGuard = String.raw`(()=>{
     try{
       const target=event.target;
       const asset=target&&target!==window?(target.src||target.href||''):'';
-      const message=event.message||event.error?.message||asset||'window-error';
-      remember('window-error',message);
-      if(isNextAsset(asset)||isDeliveryError(message)||Date.now()-STARTED_AT<15000)void recover(isNextAsset(asset)?'next-asset-error':'early-runtime-error',message);
+      const message=event.message||event.error?.stack||event.error?.message||asset||'window-error';
+      if(isNextAsset(asset)||isDeliveryError(message)){
+        remember('delivery-window-error',message);
+        void recover(isNextAsset(asset)?'next-asset-error':'delivery-runtime-error',message);
+        return;
+      }
+      rememberClientError('window-error',message);
     }catch{}
   },true);
   window.addEventListener('unhandledrejection',(event)=>{
     try{
       const reason=event.reason;
       const detail=reason?.stack||reason?.message||String(reason||'unhandled-rejection');
-      remember('unhandled-rejection',detail);
-      if(isDeliveryError(detail)||Date.now()-STARTED_AT<15000)void recover('unhandled-rejection',detail);
+      if(isDeliveryError(detail)){
+        remember('delivery-unhandled-rejection',detail);
+        void recover('delivery-unhandled-rejection',detail);
+        return;
+      }
+      rememberClientError('unhandled-rejection',detail);
     }catch{}
   });
   const verifyStyles=async()=>{
