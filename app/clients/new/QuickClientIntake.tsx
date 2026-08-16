@@ -1,10 +1,10 @@
 'use client';
 
-import {FormEvent,useRef,useState} from 'react';
+import {FormEvent,useRef,useState,type ReactNode} from 'react';
 import {useRouter} from 'next/navigation';
 import {Camera,CheckCircle2,Crosshair,FileCheck2,Home,Images,Loader2,MapPin,ShieldCheck,Sparkles,UserRound} from 'lucide-react';
 import AppShell,{useShellPermissions} from '@/components/phase15/AppShell';
-import {newIdempotencyKey} from '@/lib/phase15/apiClient';
+import {apiClient,newIdempotencyKey} from '@/lib/phase15/apiClient';
 import {haptic} from '@/lib/ux/haptics';
 
 type Photos={facade:File|null;clientPhoto:File|null;contract:File|null};
@@ -66,17 +66,15 @@ export default function QuickClientIntake(){
   haptic('tap');setOcrLoading(true);setError('');setSuccess('');
   try{
    const imageBase64=await fileToBase64(photos.contract);
-   const token=localStorage.getItem('bitalis_access_token');
-   const response=await fetch('/api/ocr-contract',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({imageBase64,mimeType:photos.contract.type||'image/jpeg'})});
-   const json=await response.json().catch(()=>({}));
-   if(!response.ok||!json?.success)throw new Error(json?.error||'No pudimos extraer el contrato.');
+   const json=await apiClient<any>('/api/ocr-contract',{method:'POST',timeoutMs:30000,body:JSON.stringify({imageBase64,mimeType:photos.contract.type||'image/jpeg'})});
+   if(!json?.success)throw new Error(json?.error||'No pudimos extraer el contrato.');
    const data=(json?.data||{}) as OcrData;
    setOcr(data);
    if(data.nombreCompleto)setName(data.nombreCompleto);
    if(data.telefono)setPhone(data.telefono);
    setSuccess('Contrato leído. Revisa los datos extraídos antes de guardar.');
    haptic('success');
-  }catch(e:any){setError(e?.message||'No pudimos extraer el contrato.');haptic('error');}
+  }catch(e:any){if(e?.status===401){router.replace('/');return;}setError(e?.message||'No pudimos extraer el contrato.');haptic('error');}
   finally{setOcrLoading(false);}
  };
 
@@ -89,16 +87,14 @@ export default function QuickClientIntake(){
   if(!photos.facade||!photos.clientPhoto||!photos.contract){setError('Debes tomar las tres fotografías: fachada, cliente y contrato.');return;}
   setSaving(true);setError('');setSuccess('');
   try{
-   const form=new FormData();
+   const form=new FormData(),idempotencyKey=newIdempotencyKey('field-client');
    form.set('name',cleanName);form.set('phone',cleanPhone);form.set('facade',photos.facade);form.set('clientPhoto',photos.clientPhoto);form.set('contract',photos.contract);
-   form.set('idempotencyKey',newIdempotencyKey('field-client'));form.set('latitude',String(position.lat));form.set('longitude',String(position.lng));if(position.accuracy!=null)form.set('locationAccuracy',String(position.accuracy));
-   const token=localStorage.getItem('bitalis_access_token');
-   const response=await fetch('/api/clients/intake',{method:'POST',headers:token?{Authorization:`Bearer ${token}`}:{},body:form});
-   const json=await response.json().catch(()=>({}));if(!response.ok)throw new Error(json?.error||'No pudimos enviar el registro.');
+   form.set('idempotencyKey',idempotencyKey);form.set('latitude',String(position.lat));form.set('longitude',String(position.lng));if(position.accuracy!=null)form.set('locationAccuracy',String(position.accuracy));
+   const json=await apiClient<any>('/api/clients/intake',{method:'POST',timeoutMs:30000,idempotencyKey,body:form});
    const id=String(json?.client?.id||''),clientNumber=String(json?.client?.clientNumber||'');
    setSuccess(`Cliente guardado · ${clientNumber||'registro completo'}.`);setName('');setPhone('');setPhotos(emptyPhotos);setPosition(null);setOcr(null);haptic('success');
    if(id)window.setTimeout(()=>router.push(`/clients/${id}`),450);
-  }catch(e:any){setError(e?.message||'No pudimos guardar el cliente.');haptic('error');}
+  }catch(e:any){if(e?.status===401){router.replace('/');return;}setError(e?.message||'No pudimos guardar el cliente.');haptic('error');}
   finally{setSaving(false);}
  };
 
@@ -119,7 +115,7 @@ export default function QuickClientIntake(){
  </main></AppShell>;
 }
 
-function PhotoCapture({title,icon,file,onPick}:{title:string;icon:React.ReactNode;file:File|null;onPick:(file:File|null)=>void}){
+function PhotoCapture({title,icon,file,onPick}:{title:string;icon:ReactNode;file:File|null;onPick:(file:File|null)=>void}){
  const id=`capture-${title.toLowerCase()}`;
  return <label htmlFor={id} className={`flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border px-2 text-center ${file?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-slate-200 bg-white text-slate-600'}`}><span className="[&>svg]:h-5 [&>svg]:w-5">{file?<CheckCircle2/>:icon}</span><span className="text-[10px] font-black">{file?`${title} lista`:title}</span><span className="flex items-center gap-1 text-[9px] font-bold opacity-70"><Camera className="h-3 w-3"/>Cámara / Galería</span><input id={id} hidden type="file" accept="image/*" onChange={e=>{onPick(e.target.files?.[0]||null);e.currentTarget.value='';}}/></label>;
 }
