@@ -1,6 +1,7 @@
 'use client';
 
 import {FormEvent,useState} from 'react';
+import {usePathname} from 'next/navigation';
 import {Bot,Loader2,Send,Sparkles,X} from 'lucide-react';
 import {apiClient} from '@/lib/phase15/apiClient';
 import {haptic} from '@/lib/ux/haptics';
@@ -9,6 +10,7 @@ type Message={role:'user'|'assistant';text:string;tools?:string[]};
 const suggestions=['¿Qué clientes debo priorizar hoy?','¿Cómo va mi ruta de cobranza?','Busca un cliente por nombre o teléfono','Consulta stock de un producto'];
 
 export default function GeminiCopilot(){
+ const pathname=usePathname();
  const[open,setOpen]=useState(false),[input,setInput]=useState(''),[loading,setLoading]=useState(false),[messages,setMessages]=useState<Message[]>([]),[error,setError]=useState('');
  const ask=async(raw?:string)=>{
   const text=String(raw??input).trim();if(!text||loading)return;
@@ -22,6 +24,7 @@ export default function GeminiCopilot(){
   finally{setLoading(false);}
  };
  const submit=(event:FormEvent)=>{event.preventDefault();void ask();};
+ if(pathname==='/'||pathname==='/login')return null;
  return <>
   <button type="button" onClick={()=>{haptic('tap');setOpen(true);}} className="fixed bottom-[calc(5.9rem+env(safe-area-inset-bottom))] right-3 z-[80] flex h-14 w-14 items-center justify-center rounded-full bg-[var(--bitalis-primary)] text-white shadow-[0_12px_30px_rgba(6,43,36,.28)] ring-4 ring-white/90 active:scale-95 sm:right-5" aria-label="Abrir BITALIS IA"><Sparkles className="h-6 w-6"/></button>
   {open&&<div data-no-swipe className="fixed inset-0 z-[180] flex items-end bg-slate-950/55 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4" onClick={()=>!loading&&setOpen(false)}>
