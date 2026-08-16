@@ -17,6 +17,7 @@ const freshEntryDocuments=[
   '/clients/new',
   '/cash',
   '/inventory',
+  '/products',
   '/renewals',
   '/commissions',
   '/authorizations',
