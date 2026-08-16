@@ -1,12 +1,15 @@
 const CACHE_PREFIX='bitalis-offline-';
 const CACHE_NAME=`${CACHE_PREFIX}v1`;
-const CORE=['/','/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'];
+const CORE=[
+  '/','/dashboard','/route','/route/close','/collections','/clients','/cash','/notifications','/settings','/sync',
+  '/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'
+];
 
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(CACHE_NAME);
     await Promise.allSettled(CORE.map(async url=>{
-      const response=await fetch(url,{cache:'reload'});
+      const response=await fetch(url,{cache:'reload',credentials:'same-origin'});
       if(response.ok)await cache.put(url,response);
     }));
     await self.skipWaiting();
@@ -30,10 +33,10 @@ async function networkFirst(request){
   }catch(error){
     const exact=await cache.match(request);
     if(exact)return exact;
+    const url=new URL(request.url);
+    const byPath=await cache.match(url.pathname);
+    if(byPath)return byPath;
     if(request.mode==='navigate'){
-      const url=new URL(request.url);
-      const byPath=await cache.match(url.pathname);
-      if(byPath)return byPath;
       const offline=await cache.match('/offline.html');
       if(offline)return offline;
     }
@@ -69,7 +72,7 @@ self.addEventListener('fetch',event=>{
   const url=new URL(request.url);
   if(url.origin!==self.location.origin)return;
 
-  // Nunca cachear autenticación ni datos financieros/API como respuesta HTTP.
+  // Autenticación, datos financieros y APIs se guardan en IndexedDB/cola, no en HTTP cache.
   if(url.pathname.startsWith('/api/')||url.pathname==='/build-version.txt')return;
 
   if(request.mode==='navigate'){
