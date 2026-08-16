@@ -57,6 +57,7 @@ public class MainActivity extends Activity {
     private GeolocationPermissions.Callback pendingGeoCallback;
     private boolean updateCheckRunning = false;
     private boolean updateDialogVisible = false;
+    private boolean offlineCacheRecoveryAttempted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -115,11 +116,32 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageCommitVisible(WebView view, String url) {
+                super.onPageCommitVisible(view, url);
+                Uri uri = Uri.parse(url == null ? "" : url);
+                if (APP_HOST.equalsIgnoreCase(uri.getHost())) {
+                    offlineCacheRecoveryAttempted = false;
+                    view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                }
+            }
+
+            @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
-                if (request.isForMainFrame()) {
-                    showOfflinePage(view);
+                if (!request.isForMainFrame()) return;
+
+                Uri failingUri = request.getUrl();
+                String failingUrl = failingUri == null ? START_URL : failingUri.toString();
+                boolean isBitalisUrl = failingUri != null && APP_HOST.equalsIgnoreCase(failingUri.getHost());
+
+                if (isBitalisUrl && !offlineCacheRecoveryAttempted) {
+                    offlineCacheRecoveryAttempted = true;
+                    view.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                    view.post(() -> view.loadUrl(failingUrl));
+                    return;
                 }
+
+                showOfflinePage(view);
             }
         });
 
@@ -398,12 +420,13 @@ public class MainActivity extends Activity {
     }
 
     private void showOfflinePage(WebView view) {
+        view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
         String html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>" +
                 "<style>body{font-family:sans-serif;background:#f5f8f7;color:#062b24;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}" +
                 ".c{padding:28px;text-align:center;max-width:360px}h1{font-size:24px}p{color:#64748b;line-height:1.5}" +
-                "button{border:0;border-radius:16px;background:#11a65a;color:white;font-weight:800;padding:16px 24px;font-size:15px}</style></head>" +
-                "<body><div class='c'><h1>BITALIS sin conexión</h1><p>No pudimos cargar la aplicación. Revisa internet y vuelve a intentar.</p>" +
-                "<button onclick=\"location.href='" + START_URL + "'\">REINTENTAR</button></div></body></html>";
+                "button{min-height:52px;border:0;border-radius:16px;background:#11a65a;color:white;font-weight:800;padding:16px 24px;font-size:15px}</style></head>" +
+                "<body><div class='c'><h1>BITALIS sin conexión</h1><p>No encontramos una copia local utilizable para esta pantalla. Si ya preparaste tu jornada, vuelve a intentar: BITALIS buscará primero el contenido guardado en el dispositivo.</p>" +
+                "<button onclick=\"location.replace('" + START_URL + "')\">REINTENTAR COPIA LOCAL</button></div></body></html>";
         view.loadDataWithBaseURL(START_URL, html, "text/html", "UTF-8", null);
     }
 
