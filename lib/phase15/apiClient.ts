@@ -1,5 +1,7 @@
 'use client';
 
+import {getApiCache,isOfflineCacheable,putApiCache} from '@/lib/phase15/apiCache';
+
 export type ApiError = { status:number; code?:string; message:string; queued?:boolean };
 export type ApiOptions = RequestInit & { timeoutMs?:number; retry?:number; idempotencyKey?:string; skipRefresh?:boolean };
 
@@ -45,8 +47,18 @@ async function refreshAccessToken(){
   try{return await pending;}finally{if(refreshPromise===pending)refreshPromise=null;}
 }
 
+async function cachedFallback<T>(path:string,method:string){
+  if(!isOfflineCacheable(path,method))return null;
+  try{return await getApiCache<T>(path);}catch{return null;}
+}
+
 export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promise<T>{
   const { timeoutMs=15000, retry=0, idempotencyKey, headers, skipRefresh=false, ...init } = options;
+  const method=String(init.method||'GET').toUpperCase();
+  if(typeof navigator!=='undefined'&&!navigator.onLine&&isOfflineCacheable(path,method)){
+    const cached=await cachedFallback<T>(path,method);
+    if(cached!==null)return cached;
+  }
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
   const token = accessToken();
@@ -67,13 +79,21 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
       if(refreshed)return apiClient<T>(path,{...options,skipRefresh:true});
       dispatchSessionExpiredOnce();
     }
-    if(!res.ok)throw friendly(res.status,body);
-    if(typeof window!=='undefined'&&path==='/api/admin/access'&&String(init.method||'GET').toUpperCase()!=='GET'){
+    if(!res.ok){
+      if(res.status>=500){const cached=await cachedFallback<T>(path,method);if(cached!==null)return cached;}
+      throw friendly(res.status,body);
+    }
+    if(isOfflineCacheable(path,method))void putApiCache(path,body).catch(()=>{});
+    if(typeof window!=='undefined'&&path==='/api/admin/access'&&method!=='GET'){
       window.dispatchEvent(new Event('bitalis:permissions-changed'));
     }
     return body as T;
   }catch(err:any){
     if(retry>0 && typeof navigator!=='undefined' && navigator.onLine && err?.status!==401 && err?.status!==403) return apiClient<T>(path,{...options,retry:retry-1});
+    if(err?.status!==401&&err?.status!==403&&err?.status!==400&&err?.status!==404){
+      const cached=await cachedFallback<T>(path,method);
+      if(cached!==null)return cached;
+    }
     if(err?.name==='AbortError') throw {status:0,code:'TIMEOUT',message:'La conexión tardó demasiado. Intenta nuevamente.'} satisfies ApiError;
     if(err?.message) throw err;
     throw {status:0,code:'NETWORK',message:'Sin conexión. Verifica tu red.'} satisfies ApiError;
