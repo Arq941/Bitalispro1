@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ShoppingBag, Users, MapPin, Lock, Plus, ShieldCheck, Camera, DollarSign } from 'lucide-react';
+import { Camera, DollarSign, Lock, MapPin, ShoppingBag } from 'lucide-react';
 import { triggerHaptic } from '@/lib/utils';
 
 interface MobileBottomNavBarProps {
@@ -22,93 +22,90 @@ export default function MobileBottomNavBar({
   onQuickAction,
 }: MobileBottomNavBarProps) {
   const currentRol = userRol || userRole || 'vendedora';
+  const canSell = currentRol === 'vendedora' || currentRol === 'sup_vendedores' || currentRol === 'admin';
+  const canCollect = currentRol === 'cobrador' || currentRol === 'admin';
+  const quickIsCollection = activeTab === 'cobrador' || (!canSell && canCollect);
+
+  const changeTab = (tab: 'vendedora' | 'cobrador') => {
+    triggerHaptic(15);
+    onChangeTab(tab);
+  };
 
   const handleFabClick = () => {
     triggerHaptic([30, 50, 30]);
     if (onQuickAction) {
       onQuickAction();
-    } else {
-      if (currentRol === 'cobrador') {
-        onChangeTab('cobrador');
-      } else {
-        onChangeTab('vendedora');
-      }
+      return;
     }
+    onChangeTab(quickIsCollection ? 'cobrador' : 'vendedora');
   };
+
+  const tabClass = (active: boolean) =>
+    `min-h-12 min-w-16 flex flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[10px] font-black transition active:scale-95 ${
+      active
+        ? 'border border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
+        : 'border border-transparent text-slate-400 active:bg-slate-800 active:text-white'
+    }`;
+
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 border-t border-slate-800 backdrop-blur-md px-3 pt-1 pb-2 flex flex-col shadow-2xl">
-      {/* Top Touch Gesture Indicator Handle */}
-      <div className="w-10 h-1 rounded-full bg-slate-700/80 mx-auto mb-1 animate-pulse" title="Desliza horizontalmente la pantalla para cambiar de pestaña" />
-      
-      <div className="flex items-center justify-between">
-      {/* Tab 1: Vendedora / Venta */}
-      {(currentRol === 'vendedora' || currentRol === 'sup_vendedores' || currentRol === 'admin') && (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-slate-950/95 px-3 pt-2 shadow-2xl backdrop-blur-xl md:hidden"
+      style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+      aria-label="Navegación principal móvil"
+    >
+      <div className="mx-auto flex max-w-lg items-end justify-around gap-2">
+        {canSell && (
+          <button
+            type="button"
+            onClick={() => changeTab('vendedora')}
+            className={tabClass(activeTab === 'vendedora')}
+            aria-current={activeTab === 'vendedora' ? 'page' : undefined}
+            aria-label="Ir a Ventas"
+          >
+            <ShoppingBag className="h-5 w-5" />
+            <span>Ventas</span>
+          </button>
+        )}
+
+        {canCollect && (
+          <button
+            type="button"
+            onClick={() => changeTab('cobrador')}
+            className={tabClass(activeTab === 'cobrador')}
+            aria-current={activeTab === 'cobrador' ? 'page' : undefined}
+            aria-label="Ir a Cobranza"
+          >
+            <MapPin className="h-5 w-5" />
+            <span>Cobranza</span>
+          </button>
+        )}
+
+        <div className="-mt-7 flex min-w-16 justify-center">
+          <button
+            type="button"
+            onClick={handleFabClick}
+            className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-slate-950 bg-[#11A65A] text-white shadow-xl shadow-black/30 transition active:scale-90 active:bg-[#0D8B4C]"
+            aria-label={quickIsCollection ? 'Acción rápida de cobranza' : 'Acción rápida de venta'}
+            title={quickIsCollection ? 'Acción rápida de cobranza' : 'Acción rápida de venta'}
+          >
+            {quickIsCollection ? <DollarSign className="h-7 w-7" /> : <Camera className="h-7 w-7" />}
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={() => {
-            triggerHaptic(15);
-            onChangeTab('vendedora');
+            triggerHaptic([20, 30]);
+            onLockSession();
           }}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1 px-2.5 rounded-xl transition ${
-            activeTab === 'vendedora'
-              ? 'text-indigo-400 bg-indigo-950/80 border border-indigo-800/80'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
+          className="min-h-12 min-w-16 flex flex-col items-center justify-center gap-1 rounded-2xl border border-transparent px-3 py-2 text-[10px] font-black text-slate-400 transition active:scale-95 active:bg-amber-500/10 active:text-amber-300"
+          aria-label="Bloquear sesión con PIN"
+          title="Bloquear sesión con PIN"
         >
-          <ShoppingBag className="w-5 h-5" />
-          <span>Ventas</span>
-        </button>
-      )}
-
-      {/* Tab 2: Cobrador / Ruta */}
-      {(currentRol === 'cobrador' || currentRol === 'admin') && (
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic(15);
-            onChangeTab('cobrador');
-          }}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1 px-2.5 rounded-xl transition ${
-            activeTab === 'cobrador'
-              ? 'text-indigo-400 bg-indigo-950/80 border border-indigo-800/80'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <MapPin className="w-5 h-5" />
-          <span>Cobranza</span>
-        </button>
-      )}
-
-      {/* CENTER FLOATING ACTION BUTTON (FAB) FOR FAST THUMB REACH */}
-      <div className="-mt-6 flex justify-center">
-        <button
-          type="button"
-          onClick={handleFabClick}
-          className="w-14 h-14 bg-gradient-to-tr from-indigo-600 to-purple-600 active:from-indigo-500 active:to-purple-500 text-white rounded-full shadow-2xl shadow-indigo-600/50 flex items-center justify-center border-2 border-slate-900 transform active:scale-90 transition cursor-pointer"
-          title="Acceso Rápido de Pulgar"
-        >
-          {currentRol === 'vendedora' ? (
-            <Camera className="w-7 h-7 text-white" />
-          ) : (
-            <DollarSign className="w-7 h-7 text-white" />
-          )}
+          <Lock className="h-5 w-5 text-amber-400" />
+          <span>Bloquear</span>
         </button>
       </div>
-
-      {/* Tab 3: Bloqueo de Seguridad PIN */}
-      <button
-        type="button"
-        onClick={() => {
-          triggerHaptic([20, 30]);
-          onLockSession();
-        }}
-        className="flex flex-col items-center gap-1 text-[10px] font-bold py-1 px-2.5 rounded-xl text-slate-400 hover:text-amber-400 transition"
-        title="Bloquear pantalla con PIN"
-      >
-        <Lock className="w-5 h-5 text-amber-400" />
-        <span>Bloquear</span>
-      </button>
-      </div>
-    </div>
+    </nav>
   );
 }
