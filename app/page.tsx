@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, startTransition, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
@@ -59,7 +59,6 @@ export default function ProductionLoginPage() {
 
   const enterAuthenticatedApp=async(user:SessionUser,permissionCodes:string[],source:EntrySource)=>{
     const destination=getAuthenticatedLandingRoute(permissionCodes);
-    router.prefetch(destination);
     dismissAndroidKeyboard();
     flushSync(()=>{
       primeAuthenticatedSession?.(user,permissionCodes);
@@ -67,7 +66,9 @@ export default function ProductionLoginPage() {
     if(source==='restore')await waitForColdRouter();
     else await nextPaint();
     traceAuthTransition('auth-enter-router-replace',{source,destination});
-    router.replace(destination);
+    startTransition(()=>{
+      router.replace(destination,{scroll:false});
+    });
   };
 
   useEffect(() => {
