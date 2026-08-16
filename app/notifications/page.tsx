@@ -15,14 +15,18 @@ function priorityMeta(priority?:string){
  return {label:'Info',className:'bg-emerald-50 text-emerald-700',icon:Info};
 }
 
+function notifyUnreadChanged(){
+ if(typeof window!=='undefined')window.dispatchEvent(new Event('bitalis:notifications-changed'));
+}
+
 export default function NotificationsPage(){
  const[items,setItems]=useState<Notification[]>([]),[loading,setLoading]=useState(true),[working,setWorking]=useState(''),[error,setError]=useState(''),[query,setQuery]=useState('');
  const load=async()=>{setLoading(true);setError('');try{const j:any=await apiClient('/api/notifications');setItems(Array.isArray(j?.data)?j.data:Array.isArray(j?.notifications)?j.notifications:[]);}catch(e:any){setError(e?.message||'No pudimos cargar tus notificaciones.');setItems([]);}finally{setLoading(false);}};
  useEffect(()=>{void load();},[]);
  const unread=items.filter(x=>String(x.status||'').toUpperCase()!=='READ').length;
  const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return q?items.filter(x=>`${x.title||''} ${x.message||''} ${x.type||''}`.toLowerCase().includes(q)):items;},[items,query]);
- const markRead=async(item:Notification)=>{if(String(item.status||'').toUpperCase()==='READ'||working)return;haptic('tap');setWorking(item.id);setError('');try{await apiClient(`/api/notifications/${encodeURIComponent(item.id)}/read`,{method:'POST'});setItems(current=>current.map(x=>x.id===item.id?{...x,status:'READ',readAt:new Date().toISOString()}:x));haptic('success');}catch(e:any){setError(e?.message||'No pudimos marcar la notificación como leída.');haptic('error');}finally{setWorking('');}};
- const markAll=async()=>{if(!unread||working)return;haptic('tap');setWorking('all');setError('');try{await apiClient('/api/notifications/read-all',{method:'POST'});const now=new Date().toISOString();setItems(current=>current.map(x=>({...x,status:'READ',readAt:x.readAt||now})));haptic('success');}catch(e:any){setError(e?.message||'No pudimos marcar todas como leídas.');haptic('error');}finally{setWorking('');}};
+ const markRead=async(item:Notification)=>{if(String(item.status||'').toUpperCase()==='READ'||working)return;haptic('tap');setWorking(item.id);setError('');try{await apiClient(`/api/notifications/${encodeURIComponent(item.id)}/read`,{method:'POST'});setItems(current=>current.map(x=>x.id===item.id?{...x,status:'READ',readAt:new Date().toISOString()}:x));notifyUnreadChanged();haptic('success');}catch(e:any){setError(e?.message||'No pudimos marcar la notificación como leída.');haptic('error');}finally{setWorking('');}};
+ const markAll=async()=>{if(!unread||working)return;haptic('tap');setWorking('all');setError('');try{await apiClient('/api/notifications/read-all',{method:'POST'});const now=new Date().toISOString();setItems(current=>current.map(x=>({...x,status:'READ',readAt:x.readAt||now})));notifyUnreadChanged();haptic('success');}catch(e:any){setError(e?.message||'No pudimos marcar todas como leídas.');haptic('error');}finally{setWorking('');}};
  return <AppShell title="Notificaciones"><div className="mx-auto max-w-4xl px-3 py-3 sm:px-4 sm:py-5">
   <section className="rounded-[24px] bg-[var(--bitalis-primary)] p-4 text-white sm:p-5"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-[var(--bitalis-mint)]"><Bell className="h-4 w-4"/>Avisos</div><h1 className="mt-2 text-xl font-black sm:text-2xl">Notificaciones</h1><p className="mt-1 text-xs leading-5 text-emerald-50/80 sm:text-sm">Alertas y avisos importantes para tu operación.</p></div><div className="rounded-2xl bg-white/10 px-3 py-2 text-center"><p className="text-[9px] font-black uppercase text-emerald-50/70">Pendientes</p><p className="text-lg font-black">{loading?'—':unread}</p></div></div></section>
   {error&&<div role="alert" className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
