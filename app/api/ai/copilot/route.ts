@@ -18,9 +18,11 @@ const tools=[{
 const clean=(value:unknown,max=MAX_TEXT)=>String(value??'').trim().replace(/\s+/g,' ').slice(0,max);
 const num=(value:unknown)=>{const n=Number(value);return Number.isFinite(n)?n:null;};
 
-function authHeaders(req:NextRequest){
+function authHeaders(req:NextRequest):HeadersInit{
+  const headers:Record<string,string>={'Cache-Control':'no-store'};
   const authorization=req.headers.get('authorization');
-  return authorization?{Authorization:authorization,'Cache-Control':'no-store'}:{'Cache-Control':'no-store'};
+  if(authorization)headers.Authorization=authorization;
+  return headers;
 }
 
 async function internalJson(req:NextRequest,path:string){
