@@ -116,14 +116,16 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" | tee apk-signature.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' apk-signature.txt
 
-      - name: Package BITALIS latest APK
+      - name: Package BITALIS APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp '${{ steps.apk.outputs.path }}' dist/BITALIS-latest.apk
+          VERSIONED_APK="BITALIS-${BITALIS_ANDROID_VERSION_NAME}.apk"
+          cp '${{ steps.apk.outputs.path }}' "dist/${VERSIONED_APK}"
+          cp "dist/${VERSIONED_APK}" dist/BITALIS-latest.apk
           cp apk-signature.txt dist/BITALIS-signature.txt
-          sha256sum dist/BITALIS-latest.apk | tee dist/BITALIS-latest.sha256
+          sha256sum "dist/${VERSIONED_APK}" | tee dist/BITALIS-latest.sha256
           APK_SHA="$(cut -d' ' -f1 dist/BITALIS-latest.sha256)"
           CERT_SHA="$(sed -n 's/.*certificate SHA-256 digest: *//p' apk-signature.txt | head -n 1)"
           cat > dist/BITALIS-android-update.json <<EOF
@@ -131,7 +133,7 @@ jobs:
             "versionCode": ${BITALIS_ANDROID_VERSION_CODE},
             "versionName": "${BITALIS_ANDROID_VERSION_NAME}",
             "sourceSha": "${SOURCE_SHA}",
-            "apkUrl": "https://github.com/Arq941/Bitalispro1/releases/download/bitalis-android-latest/BITALIS-latest.apk",
+            "apkUrl": "https://github.com/Arq941/Bitalispro1/releases/download/bitalis-android-latest/${VERSIONED_APK}",
             "sha256": "${APK_SHA}"
           }
           EOF
@@ -145,6 +147,7 @@ jobs:
           Certificado SHA-256: ${CERT_SHA:-no-disponible}
 
           El APK abre la producción oficial de BITALIS y conserva sesión/datos WebView entre actualizaciones de la aplicación.
+          Las actualizaciones se publican con nombre de versión para evitar instalar por error una descarga antigua.
           EOF
 
       - name: Upload APK workflow artifact
@@ -152,6 +155,7 @@ jobs:
         with:
           name: BITALIS-Android-${{ env.BITALIS_ANDROID_VERSION_NAME }}
           path: |
+            dist/BITALIS-${{ env.BITALIS_ANDROID_VERSION_NAME }}.apk
             dist/BITALIS-latest.apk
             dist/BITALIS-latest.sha256
             dist/BITALIS-signature.txt
@@ -177,6 +181,7 @@ jobs:
               --notes-file dist/release-notes.txt
           fi
           gh release upload bitalis-android-latest \
+            "dist/BITALIS-${BITALIS_ANDROID_VERSION_NAME}.apk" \
             dist/BITALIS-latest.apk \
             dist/BITALIS-latest.sha256 \
             dist/BITALIS-signature.txt \
