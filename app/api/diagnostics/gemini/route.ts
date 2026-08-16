@@ -1,5 +1,5 @@
 import {NextRequest,NextResponse} from 'next/server';
-import {GoogleGenAI} from '@google/genai';
+import {GoogleGenAI,ThinkingLevel} from '@google/genai';
 import {getClientUserContext} from '@/src/crm/auth-helper';
 
 const MODEL='gemini-3.6-flash';
@@ -27,9 +27,13 @@ export async function GET(req:NextRequest){
   const response=await ai.models.generateContent({
    model:MODEL,
    contents:'Responde únicamente con OK.',
-   config:{maxOutputTokens:8,temperature:0},
+   config:{
+    maxOutputTokens:64,
+    thinkingConfig:{thinkingLevel:ThinkingLevel.MINIMAL},
+   },
   });
   const text=String(response.text||'').trim();
+  const finishReason=String(response.candidates?.[0]?.finishReason||'');
   return NextResponse.json({
    success:true,
    configured:true,
@@ -37,7 +41,8 @@ export async function GET(req:NextRequest){
    model:MODEL,
    latencyMs:Date.now()-started,
    response:text.slice(0,32)||null,
-   error:text?null:'Gemini respondió sin texto.',
+   finishReason:finishReason||null,
+   error:text?null:`Gemini respondió sin texto${finishReason?` (finishReason=${finishReason})`:''}.`,
   },{headers:{'Cache-Control':'no-store'}});
  }catch(error){
   return NextResponse.json({
