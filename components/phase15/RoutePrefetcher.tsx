@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect} from 'react';
-import {useRouter} from 'next/navigation';
+import {usePathname,useRouter} from 'next/navigation';
 
 const common=['/dashboard','/notifications'];
 const routesByRole:Record<string,string[]>={
@@ -15,7 +15,10 @@ const routesByRole:Record<string,string[]>={
 
 export default function RoutePrefetcher(){
   const router=useRouter();
+  const pathname=usePathname();
+  const publicPath=pathname==='/'||pathname==='/login';
   useEffect(()=>{
+    if(publicPath)return;
     let cancelled=false;
     const prefetch=()=>{
       if(cancelled)return;
@@ -28,9 +31,9 @@ export default function RoutePrefetcher(){
         for(const route of new Set(routes))router.prefetch(route);
       }catch{}
     };
-    const id=window.setTimeout(prefetch,180);
+    const id=window.setTimeout(prefetch,450);
     window.addEventListener('bitalis:permissions-changed',prefetch);
     return()=>{cancelled=true;window.clearTimeout(id);window.removeEventListener('bitalis:permissions-changed',prefetch);};
-  },[router]);
+  },[router,publicPath,pathname]);
   return null;
 }
