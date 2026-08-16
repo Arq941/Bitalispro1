@@ -9,6 +9,7 @@ import {
   LockKeyhole, RotateCcw
 } from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
+import {apiClient} from '@/lib/phase15/apiClient';
 
 type Client={id:string;clientNumber:string;firstName:string;lastName:string;secondLastName?:string|null;phone:string;latitude?:number|null;longitude?:number|null;riskLevel?:string};
 type Credit={id:string;saleId:string;saleNumber?:string|null;clientId:string;principalAmount:number;saldoActual:number;suggestedInstallment:number;paymentFrequency:string;proximaVisita?:string|null;status:string;client:Client};
@@ -45,18 +46,18 @@ export default function CollectorRoutePage(){
   useEffect(()=>{setOnline(navigator.onLine);const on=()=>setOnline(true),off=()=>setOnline(false);window.addEventListener('online',on);window.addEventListener('offline',off);return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off);};},[]);
   useEffect(()=>{if(restored&&user?.id)persist();},[completed,selectedId,stats,planIds,planFrozen,restored,user?.id]);
 
-  const loadCash=async(u?:AuthUser|null)=>{const current=u||user;if(!current?.id)return;try{const res=await fetch(`/api/cash-sessions/current?userId=${encodeURIComponent(current.id)}`,{cache:'no-store'});const json=await res.json().catch(()=>({}));if(res.ok)setCashSession(json?.data||null);}catch{}};
+  const loadCash=async(u?:AuthUser|null)=>{const current=u||user;if(!current?.id)return;try{const json=await apiClient<any>(`/api/cash-sessions/current?userId=${encodeURIComponent(current.id)}`);setCashSession(json?.data||null);}catch{}};
 
-  const restoreProgress=async(currentUser:AuthUser,auth:string)=>{
+  const restoreProgress=async(currentUser:AuthUser)=>{
     let local:SavedProgress|null=null;try{const raw=localStorage.getItem(routeKey(currentUser.id));if(raw)local=JSON.parse(raw);}catch{}
-    let server:any=null;if(navigator.onLine){try{const res=await fetch(`/api/collections/route-progress?date=${todayMx()}`,{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(res.ok)server=json?.data;}catch{}}
+    let server:any=null;if(navigator.onLine){try{const json=await apiClient<any>(`/api/collections/route-progress?date=${todayMx()}`);server=json?.data;}catch{}}
     const serverDone=Array.isArray(server?.completedCreditIds)?server.completedCreditIds:[];const merged=Array.from(new Set([...(local?.completed||[]),...serverDone]));
     setCompleted(merged);setSelectedId(local?.selectedId||'');setStats(server?.stats?{...EMPTY_STATS,...server.stats,skipped:local?.stats?.skipped||0}:local?.stats||EMPTY_STATS);
     setPlanIds(Array.isArray(local?.planIds)?local!.planIds!:[]);setPlanFrozen(Boolean(local?.planFrozen&&local?.planIds?.length));setRestored(true);
     if(merged.length>0||local?.planFrozen)setNotice(local?.planFrozen?'Ruta del día recuperada con orden fijo.':`Ruta recuperada: ${merged.length} crédito(s) ya atendidos hoy.`);
   };
 
-  const load=async()=>{const auth=token(),raw=localStorage.getItem('bitalis_auth_user');if(!auth||!raw){router.replace('/');return;}let parsed:AuthUser;try{parsed=JSON.parse(raw);setUser(parsed);}catch{router.replace('/');return;}setLoading(true);setError('');try{const res=await fetch('/api/collections/portfolio',{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(res.status===401){router.replace('/');return;}if(!res.ok)throw new Error(json?.error||'No fue posible cargar la cartera.');setCredits((Array.isArray(json?.data)?json.data:[]).filter((c:Credit)=>c.client?.latitude!=null&&c.client?.longitude!=null));await Promise.all([loadCash(parsed),restoreProgress(parsed,auth)]);}catch(e:any){setError(e?.message||'No fue posible cargar la cartera con GPS.');}finally{setLoading(false);}};
+  const load=async()=>{const auth=token(),raw=localStorage.getItem('bitalis_auth_user');if(!auth||!raw){router.replace('/');return;}let parsed:AuthUser;try{parsed=JSON.parse(raw);setUser(parsed);}catch{router.replace('/');return;}setLoading(true);setError('');try{const json=await apiClient<any>('/api/collections/portfolio');setCredits((Array.isArray(json?.data)?json.data:[]).filter((c:Credit)=>c.client?.latitude!=null&&c.client?.longitude!=null));await Promise.all([loadCash(parsed),restoreProgress(parsed)]);}catch(e:any){if(e?.status===401){router.replace('/');return;}setError(e?.message||'No fue posible cargar la cartera con GPS.');}finally{setLoading(false);}};
   useEffect(()=>{load();},[]);
   useEffect(()=>{if(!tracking||!navigator.geolocation)return;const id=navigator.geolocation.watchPosition(p=>setPosition({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),e=>setError(e.message||'No fue posible obtener tu ubicación.'),{enableHighAccuracy:true,maximumAge:5000,timeout:15000});return()=>navigator.geolocation.clearWatch(id);},[tracking]);
 
@@ -68,7 +69,7 @@ export default function CollectorRoutePage(){
   const arrived=distance!=null&&distance<=80;
   useEffect(()=>{if(selected)setPaymentAmount(String(Math.min(selected.suggestedInstallment||selected.saldoActual,selected.saldoActual)));},[selected?.id]);
 
-  const buildPlan=async(pos:Position,force=false)=>{if(planFrozen&&!force)return;const auth=token();if(!auth||!online)return;setPlanning(true);setError('');try{const res=await fetch(`/api/collections/route-plan?lat=${encodeURIComponent(pos.lat)}&lng=${encodeURIComponent(pos.lng)}&date=${todayMx()}`,{headers:{Authorization:`Bearer ${auth}`},cache:'no-store'});const json=await res.json().catch(()=>({}));if(!res.ok)throw new Error(json?.error||'No fue posible optimizar la ruta.');const ids=Array.isArray(json?.data?.orderedCreditIds)?json.data.orderedCreditIds:Array.isArray(json?.orderedCreditIds)?json.orderedCreditIds:[];if(!ids.length)throw new Error('El optimizador no devolvió destinos.');setPlanIds(ids);setPlanFrozen(true);setSelectedId(ids.find((id:string)=>!completed.includes(id))||'');persist(user?.id,completed,ids[0]||'',stats,ids,true);setNotice(force?'Ruta recalculada y fijada nuevamente.':'Ruta optimizada y fijada para la jornada.');}catch(e:any){setError(e?.message||'No fue posible fijar la ruta.');}finally{setPlanning(false);}};
+  const buildPlan=async(pos:Position,force=false)=>{if(planFrozen&&!force)return;if(!online)return;setPlanning(true);setError('');try{const json=await apiClient<any>(`/api/collections/route-plan?lat=${encodeURIComponent(pos.lat)}&lng=${encodeURIComponent(pos.lng)}&date=${todayMx()}`);const ids=Array.isArray(json?.data?.orderedCreditIds)?json.data.orderedCreditIds:Array.isArray(json?.orderedCreditIds)?json.orderedCreditIds:[];if(!ids.length)throw new Error('El optimizador no devolvió destinos.');setPlanIds(ids);setPlanFrozen(true);setSelectedId(ids.find((id:string)=>!completed.includes(id))||'');persist(user?.id,completed,ids[0]||'',stats,ids,true);setNotice(force?'Ruta recalculada y fijada nuevamente.':'Ruta optimizada y fijada para la jornada.');}catch(e:any){setError(e?.message||'No fue posible fijar la ruta.');}finally{setPlanning(false);}};
   const start=()=>{if(!navigator.geolocation){setError('Este dispositivo no permite geolocalización.');return;}setTracking(true);navigator.geolocation.getCurrentPosition(async p=>{const pos={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};setPosition(pos);if(!planFrozen)await buildPlan(pos);},e=>setError(e.message||'Activa el permiso de ubicación para navegar.'),{enableHighAccuracy:true,timeout:15000});};
   const recalc=async()=>{if(!position){setError('Activa GPS antes de recalcular la ruta.');return;}await buildPlan(position,true);};
 
