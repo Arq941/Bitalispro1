@@ -1,5 +1,5 @@
-import ClientsScreen from '../ClientsScreen';
+import QuickClientIntake from './QuickClientIntake';
 
 export default function NewClientPage(){
-  return <ClientsScreen intakeOnly/>;
+  return <QuickClientIntake/>;
 }
