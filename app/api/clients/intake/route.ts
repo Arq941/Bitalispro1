@@ -23,6 +23,18 @@ function usefulOcrAddress(ocr: ContractOcrData | null) {
   return address;
 }
 
+function buildOcrReferences(ocr: ContractOcrData['domicilio']) {
+  if (!ocr) return undefined;
+  const parts = [
+    ocr.entreCalles ? `Entre calles: ${ocr.entreCalles}` : '',
+    ocr.manzana ? `MZN: ${ocr.manzana}` : '',
+    ocr.lote ? `LTE: ${ocr.lote}` : '',
+    ocr.referencias ? `Referencia: ${ocr.referencias}` : '',
+    ocr.fachada ? `Fachada: ${ocr.fachada}` : '',
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = getClientUserContext(req);
@@ -110,7 +122,7 @@ export async function POST(req: NextRequest) {
           exteriorNumber: ocrAddress.numeroExterior || 'S/N',
           interiorNumber: ocrAddress.numeroInterior || undefined,
           neighborhood: ocrAddress.colonia,
-          references: ocrAddress.referencias || undefined,
+          references: buildOcrReferences(ocrAddress),
           postalCode: ocrAddress.codigoPostal || '00000',
           city: ocrAddress.ciudad || ocrAddress.municipio || 'Pendiente',
           municipality: ocrAddress.municipio || undefined,
