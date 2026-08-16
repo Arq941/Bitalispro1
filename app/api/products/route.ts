@@ -3,13 +3,20 @@ import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
 import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
+import { inlineAndroidProductImages, isBitalisAndroidRequest } from '@/lib/products/android-product-images';
 
 const prisma=PrismaService.getInstance();
 const priceTypes=['LIST','LIST_PRICE','MINIMUM_AUTHORIZED','CREDIT','CASH'] as const;
 function statusFromError(error:unknown,fallback:number){const message=String((error as any)?.message||'');if(message.includes('UNAUTHORIZED'))return 401;if(message.includes('FORBIDDEN'))return 403;if(message.includes('P2002'))return 409;return fallback;}
 
 export async function GET(req:NextRequest){
- try{const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.view');const products=await prisma.product.findMany({include:{category:true,images:true,prices:true,stocks:true},orderBy:{name:'asc'}});return NextResponse.json({success:true,products});}
+ try{
+  const ctx=getSalesUserContext(req);
+  await PermissionService.requirePermission(ctx.userId,'inventory.view');
+  const products=await prisma.product.findMany({include:{category:true,images:true,prices:true,stocks:true},orderBy:{name:'asc'}});
+  const responseProducts=isBitalisAndroidRequest(req)?inlineAndroidProductImages(products):products;
+  return NextResponse.json({success:true,products:responseProducts},{headers:{'Cache-Control':'no-store','Vary':'User-Agent'}});
+ }
  catch(err:any){return NextResponse.json({success:false,error:err.message},{status:statusFromError(err,500)});}
 }
 
