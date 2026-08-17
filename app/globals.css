@@ -52,7 +52,28 @@
 .bitalis-loading-shimmer{background:#E7F0EB}
 @supports(padding:max(0px)){.bitalis-safe-bottom{padding-bottom:max(.75rem,env(safe-area-inset-bottom))}.bitalis-safe-top{padding-top:max(.25rem,env(safe-area-inset-top))}}
 
-@media(max-width:390px){header.sticky>div:has(>div:last-child>:nth-child(3)){padding-left:.5rem!important;padding-right:.5rem!important;gap:.5rem}header.sticky>div:has(>div:last-child>:nth-child(3))>div:first-child{gap:.5rem}header.sticky>div:has(>div:last-child>:nth-child(3))>div:first-child>*:last-child{display:none!important}header.sticky>div:has(>div:last-child>:nth-child(3))>div:last-child{gap:.25rem}}
+/* Acciones flotantes: se mantienen dentro del viewport y no compiten entre sí. */
+.bitalis-floating-action{position:fixed;bottom:calc(5.9rem + env(safe-area-inset-bottom));display:flex;min-height:44px;min-width:44px;max-width:calc(50vw - 1rem);align-items:center;justify-content:center;border-radius:999px;padding:.55rem .8rem;font-size:10px;font-weight:900;letter-spacing:.06em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;touch-action:manipulation}
+.bitalis-floating-action-left{left:max(.75rem,env(safe-area-inset-left))}
+.bitalis-floating-action-right{right:max(.75rem,env(safe-area-inset-right))}
+.bitalis-dialog-sheet{max-width:100vw;overflow-x:hidden;overscroll-behavior:contain}
+
+/* Formularios mobile-first: controles táctiles grandes, sin zoom accidental ni overflow horizontal. */
+form,fieldset,label,form>div,form>section{min-width:0;max-width:100%}
+form input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),form select,form textarea{max-width:100%;min-height:48px}
+form textarea{line-height:1.45}
+form select{overflow:hidden;text-overflow:ellipsis}
+form button{max-width:100%;overflow-wrap:anywhere}
+form .grid>*{min-width:0}
+.bitalis-form-card{border:1px solid var(--bitalis-border);background:#fff;border-radius:24px;box-shadow:0 8px 26px rgba(6,43,36,.05)}
+.bitalis-form-section{border:1px solid var(--bitalis-border);background:var(--bitalis-surface-soft);border-radius:20px;padding:12px}
+.bitalis-form-label{display:block;margin-bottom:7px;font-size:11px;font-weight:900;color:var(--bitalis-muted)}
+.bitalis-form-help{margin-top:6px;font-size:10px;line-height:1.4;color:var(--bitalis-muted)}
+.bitalis-form-sticky-actions{position:sticky;bottom:calc(5.1rem + env(safe-area-inset-bottom));z-index:20;margin-left:-.25rem;margin-right:-.25rem;padding:.5rem .25rem max(.5rem,env(safe-area-inset-bottom));background:linear-gradient(to top,#fff 72%,rgba(255,255,255,0))}
+
+@media(max-width:767px){form input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),form select,form textarea{font-size:16px!important}dialog,[role="dialog"],.bitalis-dialog-sheet{max-width:100vw!important}}
+@media(max-width:390px){header.sticky>div:has(>div:last-child>:nth-child(3)){padding-left:.5rem!important;padding-right:.5rem!important;gap:.5rem}header.sticky>div:has(>div:last-child>:nth-child(3))>div:first-child{gap:.5rem}header.sticky>div:has(>div:last-child>:nth-child(3))>div:first-child>*:last-child{display:none!important}header.sticky>div:has(>div:last-child>:nth-child(3))>div:last-child{gap:.25rem}.bitalis-floating-action{bottom:calc(5.65rem + env(safe-area-inset-bottom));min-height:42px;min-width:42px;padding:.5rem .65rem}}
+@media(max-width:340px){.bitalis-floating-action{max-width:42px;padding:.5rem}.bitalis-floating-action-left{left:max(.45rem,env(safe-area-inset-left))}.bitalis-floating-action-right{right:max(.45rem,env(safe-area-inset-right))}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 
 @layer utilities{.bg-bitalis-primary{background-color:var(--bitalis-primary)}.bg-bitalis-dark{background-color:var(--bitalis-primary-dark)}.text-bitalis-primary{color:var(--bitalis-primary)}.border-bitalis-primary{border-color:var(--bitalis-primary)}.phase15-card{border:1px solid var(--bitalis-border);background:#fff;border-radius:1.5rem;box-shadow:0 8px 30px rgba(6,43,36,.06)}.phase15-action{background:var(--bitalis-action);color:#fff;font-weight:900;min-height:48px;border-radius:1rem}.safe-bottom{padding-bottom:max(1rem,env(safe-area-inset-bottom))}
