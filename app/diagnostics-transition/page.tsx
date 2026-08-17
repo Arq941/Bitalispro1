@@ -6,7 +6,6 @@ import {BITALIS_BUILD_AT,BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 import {readAuthTransitionTrace} from '@/lib/ux/authTransitionTrace';
 
 type TraceEvent=ReturnType<typeof readAuthTransitionTrace>[number];
-type GeminiHealth={configured:boolean|null;api:string;model:string;latencyMs:number|null;error:string};
 const lastClientErrorKey='bitalis:last-client-error';
 const lastBuildMismatchKey='bitalis:last-build-mismatch';
 
@@ -73,7 +72,6 @@ export default function DiagnosticsTransitionPage(){
   const[build,setBuild]=useState('Cargando /build-version.txt…');
   const[lastClientError,setLastClientError]=useState('Sin excepción de cliente registrada.');
   const[lastBuildMismatch,setLastBuildMismatch]=useState('Sin desfase de build registrado.');
-  const[gemini,setGemini]=useState<GeminiHealth>({configured:null,api:'CHECKING',model:'gemini-3.6-flash',latencyMs:null,error:''});
   const[copied,setCopied]=useState(false);
 
   const refreshLocal=()=>{
@@ -83,23 +81,10 @@ export default function DiagnosticsTransitionPage(){
       setLastBuildMismatch(localStorage.getItem(lastBuildMismatchKey)||'Sin desfase de build registrado.');
     }catch{}
   };
-  const refreshGemini=async()=>{
-    setGemini(current=>({...current,api:'CHECKING',error:''}));
-    try{
-      const token=localStorage.getItem('bitalis_access_token');
-      const response=await fetch(`/api/diagnostics/gemini?ts=${Date.now()}`,{cache:'no-store',headers:{'Cache-Control':'no-store',...(token?{Authorization:`Bearer ${token}`}:{})}});
-      const json=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(json?.error||`HTTP ${response.status}`);
-      setGemini({configured:Boolean(json?.configured),api:String(json?.api||'ERROR'),model:String(json?.model||'gemini-3.6-flash'),latencyMs:Number.isFinite(Number(json?.latencyMs))?Number(json.latencyMs):null,error:String(json?.error||'')});
-    }catch(error:any){
-      setGemini({configured:null,api:'ERROR',model:'gemini-3.6-flash',latencyMs:null,error:String(error?.message||error||'No se pudo comprobar Gemini').slice(0,320)});
-    }
-  };
-  const refresh=()=>{refreshLocal();void refreshGemini();};
+  const refresh=()=>refreshLocal();
 
   useEffect(()=>{
     refreshLocal();
-    void refreshGemini();
     fetch(`/build-version.txt?ts=${Date.now()}`,{cache:'no-store',headers:{'Cache-Control':'no-store'}}).then(response=>response.text()).then(setBuild).catch(()=>setBuild('No se pudo leer /build-version.txt'));
   },[]);
 
@@ -107,13 +92,11 @@ export default function DiagnosticsTransitionPage(){
   const trace=useMemo(()=>format(rows),[rows]);
   const docs=useMemo(()=>new Set(rows.map(row=>row.doc)).size,[rows]);
   const operationalDocs=useMemo(()=>new Set(withoutDiagnosticsDocument(rows).map(row=>row.doc)).size,[rows]);
-  const geminiText=`GEMINI_CONFIGURED=${gemini.configured===null?'UNKNOWN':gemini.configured?'true':'false'}\nGEMINI_API=${gemini.api}\nGEMINI_MODEL=${gemini.model}\nGEMINI_LATENCY_MS=${gemini.latencyMs??'-'}${gemini.error?`\nGEMINI_ERROR=${gemini.error}`:''}`;
   const copy=async()=>{
-    const text=`BITALIS DIAGNOSTICO\nCLIENT_BUILD_COMMIT=${BITALIS_BUILD_COMMIT}\nCLIENT_BUILD_AT=${BITALIS_BUILD_AT}\n${build}\n${geminiText}\n\n${finding}\nULTIMO_DESFASE_BUILD=${lastBuildMismatch}\nULTIMO_ERROR_CLIENTE=${lastClientError}\nEVENTS=${rows.length}\nDOCUMENTS=${docs}\nOPERATIONAL_DOCUMENTS=${operationalDocs}\n\n${trace}`;
+    const text=`BITALIS DIAGNOSTICO\nCLIENT_BUILD_COMMIT=${BITALIS_BUILD_COMMIT}\nCLIENT_BUILD_AT=${BITALIS_BUILD_AT}\n${build}\n\n${finding}\nULTIMO_DESFASE_BUILD=${lastBuildMismatch}\nULTIMO_ERROR_CLIENTE=${lastClientError}\nEVENTS=${rows.length}\nDOCUMENTS=${docs}\nOPERATIONAL_DOCUMENTS=${operationalDocs}\n\n${trace}`;
     try{await navigator.clipboard.writeText(text);setCopied(true);}catch{window.prompt('Copia este diagnóstico:',text);}
   };
 
-  const geminiOk=gemini.configured===true&&gemini.api==='OK';
   return <main className="min-h-[100svh] bg-slate-50 px-3 py-5 text-[var(--bitalis-primary)]">
     <div className="mx-auto max-w-3xl space-y-3">
       <section className="rounded-[28px] border border-emerald-100 bg-white p-4 shadow-[0_10px_30px_rgba(6,43,36,.08)]">
@@ -127,7 +110,6 @@ export default function DiagnosticsTransitionPage(){
           <button onClick={()=>router.replace('/')} className="col-span-2 min-h-12 rounded-2xl border border-emerald-100 bg-white px-3 text-xs font-black">VOLVER A BITALIS</button>
         </div>
       </section>
-      <section className={`rounded-[28px] border bg-white p-4 ${geminiOk?'border-emerald-200':'border-amber-200'}`}><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-black">Gemini API</h2><p className="mt-1 text-[10px] text-slate-500">Comprueba la variable del servidor y realiza una llamada real al modelo sin mostrar la API key.</p></div><span className={`rounded-full px-2.5 py-1 text-[9px] font-black ${gemini.api==='CHECKING'?'bg-slate-100 text-slate-600':geminiOk?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-800'}`}>{gemini.api==='CHECKING'?'VERIFICANDO':geminiOk?'API OK':'REVISAR'}</span></div><pre className="mt-3 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{geminiText}</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Build JavaScript en ejecución</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">commit={BITALIS_BUILD_COMMIT}{'\n'}built_at={BITALIS_BUILD_AT}</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Build servido</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{build}</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Último desfase de build</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{lastBuildMismatch}</pre></section>
