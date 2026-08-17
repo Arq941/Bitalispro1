@@ -5,7 +5,6 @@ import PWAProvider from '@/components/phase15/PWAProvider';
 import AppShell from '@/components/phase15/AppShell';
 import RoutePrefetcher from '@/components/phase15/RoutePrefetcher';
 import AuthTransitionDiagnostics from '@/components/phase15/AuthTransitionDiagnostics';
-import GeminiCopilot from '@/components/phase15/GeminiCopilot';
 
 const deliveryGuard = String.raw`(()=>{
   const KEY='bitalis:delivery-recovery-attempts:v2';
@@ -150,7 +149,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css" />
       </head>
       <body className="bitalis-app-shell min-h-screen overflow-x-hidden antialiased" suppressHydrationWarning>
-        <PWAProvider><AuthTransitionDiagnostics/><ImageLightboxProvider><RoutePrefetcher/><AppShell>{children}<GeminiCopilot/></AppShell></ImageLightboxProvider></PWAProvider>
+        <PWAProvider><AuthTransitionDiagnostics/><ImageLightboxProvider><RoutePrefetcher/><AppShell>{children}</AppShell></ImageLightboxProvider></PWAProvider>
       </body>
     </html>
   );
