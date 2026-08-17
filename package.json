@@ -15,7 +15,6 @@
     "prisma:mysql:validate": "node scripts/prepare-mysql-schema.js && prisma validate --schema=prisma/schema.mysql.prisma"
   },
   "dependencies": {
-    "@google/genai": "*",
     "@prisma/client": "5.22.0",
     "@supabase/supabase-js": "^2.45.0",
     "@types/bcryptjs": "^3.0.0",
