@@ -93,7 +93,8 @@ export default function AuthTransitionDiagnostics(){
   return <button
     type="button"
     onClick={()=>router.push('/diagnostics-transition')}
-    className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-2 z-[220] min-h-10 rounded-full border border-emerald-200 bg-white/95 px-3 text-[10px] font-black tracking-[.08em] text-[var(--bitalis-primary)] shadow-lg backdrop-blur"
+    className="bitalis-floating-action bitalis-floating-action-left z-[78] border border-emerald-200 bg-white/96 text-[var(--bitalis-primary)] shadow-lg"
     aria-label="Abrir diagnóstico de transición"
-  >DIAG</button>;
+    title="Diagnóstico"
+  ><span className="hidden min-[370px]:inline">DIAG</span><span className="min-[370px]:hidden">D</span></button>;
 }
