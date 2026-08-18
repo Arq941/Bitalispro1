@@ -23,6 +23,9 @@ const salesService = read('src/sales/sales.service.ts');
 const purchaseOrders = read('app/api/product-orders/route.ts');
 const inventoryOperations = read('app/api/inventory/operations/route.ts');
 const inventoryService = read('src/inventory/inventory.service.ts');
+const routePlan = read('app/api/collections/route-plan/route.ts');
+const routePage = read('app/route/page.tsx');
+const collectionVisits = read('app/api/collections/visits/route.ts');
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');
@@ -82,5 +85,14 @@ assert(inventoryService.includes('cancelProductOrder') && inventoryService.inclu
   'procurement must support auditable cancellation and immutable receipts');
 assert(inventoryOperations.includes("body.operation === 'DAMAGE'") && inventoryOperations.includes("body.operation === 'RETURN_IN'") && inventoryOperations.includes("body.operation === 'SUPPLIER_RETURN'"),
   'inventory operations must expose damage, customer return and supplier return flows');
+
+assert(routePlan.includes('improveTwoOpt') && routePlan.includes('urgencyTier') && routePlan.includes('maxStops') && routePlan.includes('estimatedMinutes'),
+  'route planning must combine urgency, distance optimization, daily capacity and ETA');
+assert(routePage.includes('completedCreditIds:completed') && routePage.includes('openFullRoute') && routePage.includes('planSummary'),
+  'route recalculation must exclude completed stops and expose operational metrics');
+assert(collectionVisits.includes("requirePermission(user.userId, 'collections.collect')") && collectionVisits.includes('assignedCollectorId !== user.userId'),
+  'collection visits must be limited to the assigned collector portfolio');
+assert(collectionVisits.includes('proximaVisita: nextDate') && routePage.includes("rescheduleDate:result==='RESCHEDULED'"),
+  'rescheduling from route must persist the next visit date');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
