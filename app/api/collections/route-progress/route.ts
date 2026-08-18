@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 function mexicoDayRange(date: string) {
   const safe = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
@@ -12,6 +13,7 @@ function mexicoDayRange(date: string) {
 export async function GET(req: NextRequest) {
   try {
     const user = getSalesUserContext(req);
+    await PermissionService.requirePermission(user.userId, 'route.view');
     const prisma = PrismaService.getInstance();
     const { searchParams } = new URL(req.url);
     const { start, end, date } = mexicoDayRange(searchParams.get('date') || '');
