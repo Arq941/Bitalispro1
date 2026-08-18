@@ -11,6 +11,8 @@ export interface ClientUserContext {
   role: 'ADMIN' | 'SUPERVISORA' | 'VENDEDORA' | 'COBRADOR';
   zoneId?: string;
   assignedRouteId?: string;
+  /** Capacidad interna y efímera usada solo por el alta rápida en una petición. */
+  intakeOnly?: boolean;
   permissions?: string[];
 }
 
@@ -134,7 +136,7 @@ export class ClientService {
       const prisma = PrismaService.getInstance();
       client = await prisma.client.findUnique({
         where: { id: clientId },
-        select: { id: true, assignedSellerId: true, assignedCollectorId: true, zoneId: true },
+        select: { id: true, assignedSellerId: true, assignedCollectorId: true, zoneId: true, createdBy: true, customerType: true, status: true },
       });
     } catch {
       client = InStore.clients.get(clientId);
@@ -142,10 +144,10 @@ export class ClientService {
 
     if (!client) return false;
 
+    // Captura ciega: después de enviar el alta la vendedora no puede volver a
+    // leer, buscar, editar ni enriquecer ningún expediente, incluso si lo creó.
     if (context.role === 'VENDEDORA') {
-      if (client.assignedSellerId === context.userId) return true;
-      if (context.zoneId && client.zoneId === context.zoneId) return true;
-      return false;
+      return context.intakeOnly === true && client.createdBy === context.userId && client.customerType === 'PENDING_SUPERVISOR' && client.status === 'PROSPECT';
     }
 
     if (context.role === 'COBRADOR') {
@@ -267,6 +269,9 @@ export class ClientService {
     },
     userContext: ClientUserContext
   ) {
+    if (userContext.role === 'VENDEDORA') {
+      throw new Error('FORBIDDEN: El rol de vendedora solo puede enviar altas rápidas a supervisión.');
+    }
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
