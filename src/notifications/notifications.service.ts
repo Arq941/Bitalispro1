@@ -39,7 +39,7 @@ export class NotificationAbacService {
     }
 
     if (role === 'COBRADOR') {
-      const allowedTypes = ['COLLECTION_RISK', 'OVERDUE_CLIENT', 'BROKEN_PROMISE', 'CASH_VARIANCE', 'OFFLINE_CONFLICT', 'PAYMENT_VERIFIED'];
+      const allowedTypes = ['COLLECTION_RISK', 'OVERDUE_CLIENT', 'BROKEN_PROMISE', 'CASH_VARIANCE', 'OFFLINE_CONFLICT', 'PAYMENT_VERIFIED', 'FIRST_COLLECTION_DUE'];
       if (!allowedTypes.includes(notification.type)) return false;
       return true;
     }
@@ -60,6 +60,10 @@ export class NotificationAbacService {
 }
 
 export class NotificationService {
+  static async ensureFirstCollectionNotices(userContext:{userId:string;role:string}) {
+    const role=String(userContext.role||'').toUpperCase();if(!['COBRADOR','SUPERVISORA','ADMIN'].includes(role))return;
+    try{const prisma=PrismaService.getInstance(),end=new Date();end.setHours(23,59,59,999);const schedules=await prisma.paymentSchedule.findMany({where:{installmentNumber:1,scheduledDate:{lte:end},status:{in:['PENDING','PARTIAL']},credit:{status:'ACTIVE',payments:{none:{}},...(role==='COBRADOR'?{client:{assignedCollectorId:userContext.userId}}:{})}},include:{credit:{include:{client:true}}},take:100});for(const schedule of schedules){const client=schedule.credit.client;await this.createNotification({userId:userContext.userId,type:'FIRST_COLLECTION_DUE',priority:schedule.scheduledDate<new Date()?'HIGH':'MEDIUM',title:'Primer cobro pendiente',message:`${client.firstName} ${client.lastName} · primer abono ${schedule.scheduledDate.toLocaleDateString('es-MX')}`,entity:'Credit',entityId:schedule.creditId});}}catch{}
+  }
   /**
    * Crea una notificación para un usuario evitando duplicados abiertos con el mismo tipo, entidad y entityId.
    */
