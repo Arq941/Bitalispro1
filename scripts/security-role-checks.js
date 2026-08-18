@@ -17,6 +17,7 @@ const intake = read('app/api/clients/intake/route.ts');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
 const newSale = read('app/sales/new/page.tsx');
 const notifications = read('src/notifications/notifications.service.ts');
+const clientFile = read('app/clients/[id]/complete/page.tsx');
 const financialRules = read('src/financial/financial-rules.service.ts');
 const salesService = read('src/sales/sales.service.ts');
 
@@ -59,6 +60,11 @@ assert(newSale.includes('firstPaymentDate') && newSale.includes("/credit`"),
   'credit sales must capture the first installment date and create the schedule');
 assert(notifications.includes('FIRST_COLLECTION_DUE'),
   'the first installment date must produce a collection notice when due');
+assert(clientFile.includes('Teléfono adicional') && clientFile.includes('Manzana') && clientFile.includes('Lote') &&
+  clientFile.includes('Entre calles') && clientFile.includes('Frente a') && clientFile.includes('Al lado de'),
+  'client file must capture the complete address references and a second phone');
+assert(clientFile.includes('/api/geocode/reverse?lat=') && clientFile.includes('street:g.street') && clientFile.includes('neighborhood:g.neighborhood'),
+  'captured coordinates must automatically populate street and neighborhood');
 assert(financialRules.includes('APORTE_EMPRESA_MAXIMO = new Decimal(200)') &&
   financialRules.includes('Decimal.min(enganche, this.APORTE_EMPRESA_MAXIMO)'),
   'company contribution must match the customer down payment only up to $200');
