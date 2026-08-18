@@ -5,6 +5,7 @@ import { extractUserContext } from '@/src/sales/sales-auth.helper';
 export async function GET(req: NextRequest) {
   try {
     const userContext = await extractUserContext(req);
+    await NotificationService.ensureOperationalNotices(userContext);
     const notifications = await NotificationService.getUserNotifications(userContext.userId, undefined, userContext);
     return NextResponse.json({ success: true, data: notifications });
   } catch (err: any) {
