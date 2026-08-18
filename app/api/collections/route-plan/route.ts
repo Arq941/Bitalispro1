@@ -12,6 +12,9 @@ type Point = {
   saldoActual: number;
   dueToday: boolean;
   overdue: boolean;
+  preferredToday: boolean;
+  suggestedInstallment: number;
+  urgencyTier: number;
 };
 
 const riskWeight: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
@@ -33,40 +36,53 @@ function mexicoDayRange() {
   return { date, start, end };
 }
 
-function buildStablePlan(points: Point[], origin: { lat: number; lng: number }) {
-  const remaining = [...points];
-  const ordered: Array<Point & { order: number; distanceFromPreviousKm: number; routeScore: number }> = [];
-  let cursor = origin;
+function routeDistance(points: Point[], origin: { lat: number; lng: number }) {
+  let total = 0, cursor = origin;
+  for (const point of points) { total += distanceKm(cursor, { lat: point.latitude, lng: point.longitude }); cursor = { lat: point.latitude, lng: point.longitude }; }
+  return total;
+}
 
-  while (remaining.length) {
-    let bestIndex = 0;
-    let bestScore = -Infinity;
-    let bestDistance = Infinity;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const item = remaining[i];
-      const distance = distanceKm(cursor, { lat: item.latitude, lng: item.longitude });
-
-      // La prioridad financiera manda, pero penalizamos trayectos largos.
-      // Esto evita zig-zag sin sacrificar morosos/críticos importantes.
-      const financial = item.priorityScore;
-      const urgency = (item.overdue ? 35 : 0) + (item.dueToday ? 20 : 0) + (riskWeight[item.riskLevel] || 1) * 6;
-      const distancePenalty = Math.min(distance, 30) * 4;
-      const routeScore = financial + urgency - distancePenalty;
-
-      if (routeScore > bestScore || (routeScore === bestScore && distance < bestDistance)) {
-        bestScore = routeScore;
-        bestDistance = distance;
-        bestIndex = i;
+function improveTwoOpt(input: Point[], origin: { lat: number; lng: number }) {
+  const route = [...input];
+  let improved = true, passes = 0;
+  while (improved && passes++ < 4) {
+    improved = false;
+    for (let i = 0; i < route.length - 1; i++) {
+      for (let k = i + 1; k < route.length; k++) {
+        if (route.slice(i, k + 1).some(point => point.urgencyTier !== route[i].urgencyTier)) continue;
+        const before = routeDistance(route, origin);
+        const candidate = [...route.slice(0, i), ...route.slice(i, k + 1).reverse(), ...route.slice(k + 1)];
+        const after = routeDistance(candidate, origin);
+        if (after + 0.01 < before) { route.splice(0, route.length, ...candidate); improved = true; }
       }
     }
-
-    const [chosen] = remaining.splice(bestIndex, 1);
-    ordered.push({ ...chosen, order: ordered.length + 1, distanceFromPreviousKm: bestDistance, routeScore: Math.round(bestScore * 100) / 100 });
-    cursor = { lat: chosen.latitude, lng: chosen.longitude };
   }
+  return route;
+}
 
-  return ordered;
+function buildStablePlan(points: Point[], origin: { lat: number; lng: number }) {
+  const remaining = [...points];
+  const greedy: Point[] = [];
+  let cursor = origin;
+  while (remaining.length) {
+    const activeTier = Math.min(...remaining.map(point => point.urgencyTier));
+    const eligible = remaining.map((point, index) => ({ point, index })).filter(entry => entry.point.urgencyTier === activeTier);
+    let best = eligible[0], bestScore = -Infinity;
+    for (const entry of eligible) {
+      const distance = distanceKm(cursor, { lat: entry.point.latitude, lng: entry.point.longitude });
+      const score = entry.point.priorityScore - Math.min(distance, 30) * 5 + Math.min(entry.point.saldoActual / 100, 20);
+      if (score > bestScore) { best = entry; bestScore = score; }
+    }
+    const [chosen] = remaining.splice(best.index, 1);
+    greedy.push(chosen); cursor = { lat: chosen.latitude, lng: chosen.longitude };
+  }
+  const optimized = improveTwoOpt(greedy, origin);
+  let previous = origin;
+  return optimized.map((point, index) => {
+    const leg = distanceKm(previous, { lat: point.latitude, lng: point.longitude });
+    previous = { lat: point.latitude, lng: point.longitude };
+    return { ...point, order: index + 1, distanceFromPreviousKm: Math.round(leg * 100) / 100, routeScore: point.priorityScore };
+  });
 }
 
 async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) {
@@ -87,6 +103,8 @@ async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) 
     }
 
     const completedIds = Array.isArray(body.completedCreditIds) ? body.completedCreditIds.filter((v: unknown) => typeof v === 'string') : [];
+    const requestedMaxStops = Number(body.maxStops || 45);
+    const maxStops = Number.isInteger(requestedMaxStops) ? Math.min(60, Math.max(1, requestedMaxStops)) : 45;
     const prisma = PrismaService.getInstance();
     const { date, start, end } = mexicoDayRange();
 
@@ -131,12 +149,20 @@ async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) 
         saldoActual: Number(credit.saldoActual),
         dueToday,
         overdue,
+        preferredToday,
+        suggestedInstallment: Number(credit.suggestedInstallment || 0),
+        urgencyTier: overdue && riskLevel === 'CRITICAL' ? 0 : overdue || dueToday ? 1 : preferredToday || ['CRITICAL','HIGH'].includes(riskLevel) ? 2 : 3,
       }];
     });
 
     const todays = points.filter(p => p.overdue || p.dueToday || p.priorityScore >= 45);
-    const candidates = todays.length ? todays : points;
+    const candidates = (todays.length ? todays : points)
+      .sort((a, b) => a.urgencyTier - b.urgencyTier || b.priorityScore - a.priorityScore || b.saldoActual - a.saldoActual)
+      .slice(0, maxStops);
     const plan = buildStablePlan(candidates, { lat: latitude, lng: longitude });
+    const totalDistanceKm = Math.round(plan.reduce((sum, stop) => sum + stop.distanceFromPreviousKm, 0) * 100) / 100;
+    const estimatedMinutes = Math.ceil((totalDistanceKm / 22) * 60 + plan.length * 8);
+    const expectedCollection = Math.round(plan.reduce((sum, stop) => sum + Math.min(stop.suggestedInstallment, stop.saldoActual), 0) * 100) / 100;
 
     return NextResponse.json({
       success: true,
@@ -146,6 +172,12 @@ async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) 
         origin: { latitude, longitude },
         completedCreditIds: completedIds,
         total: plan.length,
+        maxStops,
+        totalDistanceKm,
+        estimatedMinutes,
+        expectedCollection,
+        urgentStops: plan.filter(stop => stop.urgencyTier <= 1).length,
+        optimization: 'URGENCY_NEAREST_NEIGHBOR_2OPT',
         orderedCreditIds: plan.map(p => p.id),
         stops: plan,
       },
@@ -172,5 +204,6 @@ export async function GET(req: NextRequest) {
     latitude: params.get('latitude') ?? params.get('lat'),
     longitude: params.get('longitude') ?? params.get('lng'),
     completedCreditIds,
+    maxStops: params.get('maxStops') || 45,
   });
 }
