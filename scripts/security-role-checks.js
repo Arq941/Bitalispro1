@@ -33,8 +33,10 @@ for (const role of ['ADMIN', 'SUPERVISORA', 'VENDEDORA', 'COBRADOR']) {
 for (const permission of ['collections.collect', 'sales.create', 'sales.approve', 'users.manage']) {
   assert(permissions.includes(permission), 'permission catalog must include ' + permission);
 }
-assert(permissions.includes("return inherited.has('clients.create') ? ['clients.create'] : []"),
+assert(permissions.includes("return intakeDenied ? [] : ['clients.create']"),
   'field seller effective permissions must be limited to blind intake');
+assert(permissions.includes("code === 'clients.create') return true"),
+  'legacy seller matrices must retain access to blind intake');
 assert(clients.includes("if (context.role === 'VENDEDORA')") && clients.includes('context.intakeOnly === true'),
   'seller client access must be limited to the ephemeral intake capability');
 assert(clients.includes("El rol de vendedora solo puede enviar altas rápidas"),
