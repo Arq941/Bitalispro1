@@ -144,10 +144,12 @@ export class ClientService {
 
     if (!client) return false;
 
+    if (context.intakeOnly === true && client.createdBy === context.userId && client.customerType === 'PENDING_SUPERVISOR' && client.status === 'PROSPECT') return true;
+
     // Captura ciega: después de enviar el alta la vendedora no puede volver a
     // leer, buscar, editar ni enriquecer ningún expediente, incluso si lo creó.
     if (context.role === 'VENDEDORA') {
-      return context.intakeOnly === true && client.createdBy === context.userId && client.customerType === 'PENDING_SUPERVISOR' && client.status === 'PROSPECT';
+      return false;
     }
 
     if (context.role === 'COBRADOR') {

@@ -77,7 +77,7 @@ const SECURE_ROLE_DEFAULTS: Record<string, readonly string[]> = {
     'clients.create',
   ],
   COBRADOR: [
-    'dashboard.view', 'clients.view',
+    'dashboard.view', 'clients.view', 'clients.create',
     'collections.view', 'collections.collect',
     'route.view', 'route.manage',
     'cash.view', 'cash.operate', 'cash.close',
@@ -238,6 +238,7 @@ export class PermissionService {
     // configuration must never become global access.
     if (!configured) this.applySecureRoleFallback(inherited, roleNames);
 
+    if (roleNames.includes('ADMIN')) return Array.from(LEGACY_PERMISSION_CODES).sort();
     const overrides = await this.getUserOverrides(userId);
     for (const override of overrides) {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
@@ -255,6 +256,7 @@ export class PermissionService {
     if (!code) return false;
 
     const context = await this.getPermissionContext(userId);
+    if (context.roleNames.includes('ADMIN')) return (LEGACY_PERMISSION_CODES as readonly string[]).includes(code);
     if (this.isFieldSeller(context.roleNames) && code !== 'clients.create') return false;
 
     const overrides = await this.getUserOverrides(userId);

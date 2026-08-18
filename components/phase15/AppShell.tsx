@@ -2,7 +2,7 @@
 
 import {MouseEvent as ReactMouseEvent,ReactNode,TouchEvent,createContext,useCallback,useContext,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {usePathname,useRouter} from 'next/navigation';
-import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,ReceiptText,Repeat2,Route,Settings,ShieldCheck,ShoppingCart,UserPlus,Users,WalletCards,X} from 'lucide-react';
+import {Bell,Boxes,ClipboardCheck,Coins,Home,Loader2,LogOut,Menu,ReceiptText,Repeat2,Route,Settings,ShieldCheck,ShoppingCart,UserPlus,Users,WalletCards,X} from 'lucide-react';
 import BitalisLogo from '@/components/BitalisLogo';
 import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 import {apiClient} from '@/lib/phase15/apiClient';
@@ -18,7 +18,7 @@ const ShellContext=createContext<ShellContextValue|null>(null);
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/portfolio',label:'Cartera',icon:Users,permission:'collections.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
 const seller:NavItem[]=[{href:'/clients/new',label:'Alta rápida',icon:UserPlus,permission:'clients.create'}];
 const supervisor:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/portfolio',label:'Cartera',icon:WalletCards,permission:'collections.view'},{href:'/authorizations',label:'Autorizar',icon:ShieldCheck,permission:'sales.approve'},{href:'/renewals',label:'Renovar',icon:ClipboardCheck,permission:'renewals.view'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'}];
-const admin:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/portfolio',label:'Cartera',icon:WalletCards,permission:'collections.view'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'},{href:'/inventory',label:'Stock',icon:ClipboardCheck,permission:'inventory.view'},{href:'/settings',label:'Config.',icon:Settings,permission:'settings.manage'}];
+const admin:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/clients/new',label:'Alta',icon:UserPlus,permission:'clients.create'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'},{href:'/settings/users',label:'Usuarios',icon:Users,permission:'users.manage'},{href:'/admin-menu',label:'Menú',icon:Menu,permission:'settings.manage'}];
 const menus:Record<string,NavItem[]>={COBRADOR:collector,VENDEDORA:seller,VENDEDOR:seller,SUPERVISORA:supervisor,SUPERVISOR:supervisor,ADMIN:admin};
 const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
 const permissionCacheKey='bitalis_effective_permissions';
