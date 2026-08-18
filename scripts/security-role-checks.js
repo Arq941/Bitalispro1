@@ -15,6 +15,8 @@ const shell = read('components/phase15/AppShell.tsx');
 const clients = read('src/crm/client.service.ts');
 const intake = read('app/api/clients/intake/route.ts');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
+const newSale = read('app/sales/new/page.tsx');
+const notifications = read('src/notifications/notifications.service.ts');
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');
@@ -49,5 +51,11 @@ assert(androidSecurity.includes('LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L'),
   'Android must require biometric unlock after two minutes in background');
 assert(androidSecurity.includes('CREDENTIAL_SESSION_MS = 8L * 60L * 60L * 1000L'),
   'Android must expire retained credentials after eight hours');
+assert(adminAccess.includes('publicOrigin(req)'),
+  'password setup links must use the public application origin');
+assert(newSale.includes('firstPaymentDate') && newSale.includes("/credit`"),
+  'credit sales must capture the first installment date and create the schedule');
+assert(notifications.includes('FIRST_COLLECTION_DUE'),
+  'the first installment date must produce a collection notice when due');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
