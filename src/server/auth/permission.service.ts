@@ -60,6 +60,35 @@ const NAVIGABLE_PERMISSION_CODES = new Set<string>([
   'settings.manage',
 ]);
 
+const SECURE_ROLE_DEFAULTS: Record<string, readonly string[]> = {
+  ADMIN: LEGACY_PERMISSION_CODES,
+  SUPERVISORA: [
+    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
+    'sales.view', 'sales.create', 'sales.approve',
+    'collections.view', 'route.view', 'route.manage',
+    'cash.view', 'cash.operate', 'cash.close',
+    'inventory.view', 'renewals.view', 'renewals.manage',
+    'commissions.view', 'reports.view', 'audit.view',
+  ],
+  VENDEDORA: [
+    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
+    'sales.view', 'sales.create', 'inventory.view',
+    'renewals.view', 'commissions.view',
+  ],
+  VENDEDOR: [
+    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
+    'sales.view', 'sales.create', 'inventory.view',
+    'renewals.view', 'commissions.view',
+  ],
+  COBRADOR: [
+    'dashboard.view', 'clients.view',
+    'collections.view', 'collections.collect',
+    'route.view', 'route.manage',
+    'cash.view', 'cash.operate', 'cash.close',
+    'commissions.view',
+  ],
+};
+
 export class PermissionService {
   private static prisma = PrismaService.getInstance();
   private static initialized = false;
@@ -179,35 +208,35 @@ export class PermissionService {
         },
       },
     });
-    if (!user) return { inherited: new Set<string>(), configured: false };
+    if (!user) return { inherited: new Set<string>(), configured: false, roleNames: [] as string[] };
 
     const inherited = new Set<string>();
+    const roleNames: string[] = [];
     let configured = false;
     for (const mapping of user.userRoles) {
+      roleNames.push(String(mapping.role.name || '').toUpperCase());
       for (const rp of mapping.role.rolePermissions) {
         const code = rp.permission.code;
         inherited.add(code);
         if (NAVIGABLE_PERMISSION_CODES.has(code)) configured = true;
       }
     }
-    return { inherited, configured };
+    return { inherited, configured, roleNames };
+  }
+
+  private static applySecureRoleFallback(inherited: Set<string>, roleNames: string[]) {
+    for (const roleName of roleNames) {
+      for (const code of SECURE_ROLE_DEFAULTS[roleName] || []) inherited.add(code);
+    }
   }
 
   public static async getEffectivePermissionCodes(userId: string) {
-    const { inherited, configured } = await this.getPermissionContext(userId);
+    const { inherited, configured, roleNames } = await this.getPermissionContext(userId);
 
-    // Keep the effective-permissions endpoint consistent with hasPermission().
-    // Legacy installations without a usable current role matrix are permissive
-    // by design. The permission registry can also be empty in those installs,
-    // so seed the response from BITALIS' built-in permission catalog as well as
-    // any registered database permissions. Unknown legacy codes are preserved.
-    if (!configured) {
-      for (const code of LEGACY_PERMISSION_CODES) inherited.add(code);
-      const registeredPermissions = await this.prisma.permission.findMany({
-        select: { code: true },
-      });
-      for (const permission of registeredPermissions) inherited.add(permission.code);
-    }
+    // Secure fallback for legacy installations: use the least-privilege
+    // built-in matrix for the user's actual role. Missing or malformed role
+    // configuration must never become global access.
+    if (!configured) this.applySecureRoleFallback(inherited, roleNames);
 
     const overrides = await this.getUserOverrides(userId);
     for (const override of overrides) {
@@ -226,8 +255,8 @@ export class PermissionService {
     if (override?.effect === 'DENY') return false;
     if (override?.effect === 'ALLOW') return true;
 
-    const { inherited, configured } = await this.getPermissionContext(userId);
-    if (!configured) return true;
+    const { inherited, configured, roleNames } = await this.getPermissionContext(userId);
+    if (!configured) this.applySecureRoleFallback(inherited, roleNames);
     return inherited.has(code);
   }
 
