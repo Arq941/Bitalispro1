@@ -280,7 +280,7 @@ export class NotificationService {
     let notification: any = null;
     try {
       const prisma = PrismaService.getInstance();
-      const dbNotif = await prisma.notification.findUnique({ where: { id } });
+      const dbNotif = await prisma.notification.findFirst({ where: { id, userId } });
       if (dbNotif) {
         notification = await prisma.notification.update({
           where: { id },
@@ -291,6 +291,7 @@ export class NotificationService {
 
     if (!notification) {
       notification = NotificationsStore.notifications.get(id);
+      if (notification?.userId !== userId) notification = null;
       if (notification) {
         notification.status = 'READ';
         notification.readAt = new Date();
