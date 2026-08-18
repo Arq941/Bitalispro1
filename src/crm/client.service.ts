@@ -297,12 +297,7 @@ export class ClientService {
       if (query.assignedSellerId) where.assignedSellerId = query.assignedSellerId;
       if (query.assignedCollectorId) where.assignedCollectorId = query.assignedCollectorId;
 
-      if (userContext.role === 'VENDEDORA') {
-        where.OR = [
-          { assignedSellerId: userContext.userId },
-          ...(userContext.zoneId ? [{ zoneId: userContext.zoneId }] : []),
-        ];
-      } else if (userContext.role === 'COBRADOR') {
+      if (userContext.role === 'COBRADOR') {
         where.OR = [
           { assignedCollectorId: userContext.userId },
           ...(userContext.assignedRouteId ? [{ zoneId: userContext.assignedRouteId }] : []),
@@ -319,9 +314,7 @@ export class ClientService {
       // In-memory fallback
       let list = Array.from(InStore.clients.values());
 
-      if (userContext.role === 'VENDEDORA') {
-        list = list.filter((c) => c.assignedSellerId === userContext.userId || (userContext.zoneId && c.zoneId === userContext.zoneId));
-      } else if (userContext.role === 'COBRADOR') {
+      if (userContext.role === 'COBRADOR') {
         list = list.filter((c) => c.assignedCollectorId === userContext.userId || (userContext.assignedRouteId && c.zoneId === userContext.assignedRouteId));
       }
 
