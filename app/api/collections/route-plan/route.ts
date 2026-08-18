@@ -69,7 +69,7 @@ function buildStablePlan(points: Point[], origin: { lat: number; lng: number }) 
   return ordered;
 }
 
-export async function POST(req: NextRequest) {
+async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) {
   try {
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.toLowerCase().startsWith('bearer ')) {
@@ -80,9 +80,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'UNAUTHORIZED: Token inválido o expirado.' }, { status: 401 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const latitude = Number(body.latitude);
-    const longitude = Number(body.longitude);
+    const latitude = Number(body.latitude ?? body.lat);
+    const longitude = Number(body.longitude ?? body.lng);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return NextResponse.json({ error: 'latitude y longitude son requeridos para planear la ruta.' }, { status: 400 });
     }
@@ -156,4 +155,22 @@ export async function POST(req: NextRequest) {
     const status = /token|auth|bearer|unauthorized/i.test(message) ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  return handleRoutePlan(req, body);
+}
+
+export async function GET(req: NextRequest) {
+  const params = req.nextUrl.searchParams;
+  const completedCreditIds = (params.get('completedCreditIds') || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  return handleRoutePlan(req, {
+    latitude: params.get('latitude') ?? params.get('lat'),
+    longitude: params.get('longitude') ?? params.get('lng'),
+    completedCreditIds,
+  });
 }
