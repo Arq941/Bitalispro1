@@ -17,6 +17,8 @@ const intake = read('app/api/clients/intake/route.ts');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
 const newSale = read('app/sales/new/page.tsx');
 const notifications = read('src/notifications/notifications.service.ts');
+const financialRules = read('src/financial/financial-rules.service.ts');
+const salesService = read('src/sales/sales.service.ts');
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');
@@ -57,5 +59,12 @@ assert(newSale.includes('firstPaymentDate') && newSale.includes("/credit`"),
   'credit sales must capture the first installment date and create the schedule');
 assert(notifications.includes('FIRST_COLLECTION_DUE'),
   'the first installment date must produce a collection notice when due');
+assert(financialRules.includes('APORTE_EMPRESA_MAXIMO = new Decimal(200)') &&
+  financialRules.includes('Decimal.min(enganche, this.APORTE_EMPRESA_MAXIMO)'),
+  'company contribution must match the customer down payment only up to $200');
+assert(newSale.includes("Math.min(enganche,200)") &&
+  salesService.includes('FinancialRulesService.calcularAporteEmpresa(engancheCliente)') &&
+  salesService.includes('FinancialRulesService.calcularAporteEmpresa(saleEnganche)'),
+  'the $200 company contribution cap must be consistent in UI, sale and credit');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
