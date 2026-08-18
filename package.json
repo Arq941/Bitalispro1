@@ -12,7 +12,8 @@
     "prisma:validate": "prisma validate",
     "prisma:format": "prisma format",
     "prisma:mysql:generate": "node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma",
-    "prisma:mysql:validate": "node scripts/prepare-mysql-schema.js && prisma validate --schema=prisma/schema.mysql.prisma"
+    "prisma:mysql:validate": "node scripts/prepare-mysql-schema.js && prisma validate --schema=prisma/schema.mysql.prisma",
+    "test:security": "node scripts/security-role-checks.js"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
