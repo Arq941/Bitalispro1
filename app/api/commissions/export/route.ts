@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 export async function GET(req: NextRequest) {
   try {
+    const userContext = await extractUserContext(req);
+    await PermissionService.requirePermission(userContext.userId, 'commissions.view');
+    if (userContext.role !== 'ADMIN') throw new Error('FORBIDDEN: Exportación global reservada a administración.');
     const prisma = PrismaService.getInstance();
     const commissions = await prisma.commission.findMany({
       orderBy: { createdAt: 'desc' },
