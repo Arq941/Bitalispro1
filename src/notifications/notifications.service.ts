@@ -39,7 +39,7 @@ export class NotificationAbacService {
     }
 
     if (role === 'COBRADOR') {
-      const allowedTypes = ['COLLECTION_RISK', 'OVERDUE_CLIENT', 'BROKEN_PROMISE', 'CASH_VARIANCE', 'OFFLINE_CONFLICT', 'PAYMENT_VERIFIED', 'FIRST_COLLECTION_DUE'];
+      const allowedTypes = ['COLLECTION_RISK', 'OVERDUE_CLIENT', 'BROKEN_PROMISE', 'CASH_VARIANCE', 'OFFLINE_CONFLICT', 'PAYMENT_VERIFIED', 'FIRST_COLLECTION_DUE', 'COLLECTION_ROUTE_DUE'];
       if (!allowedTypes.includes(notification.type)) return false;
       return true;
     }
@@ -60,10 +60,117 @@ export class NotificationAbacService {
 }
 
 export class NotificationService {
-  static async ensureFirstCollectionNotices(userContext:{userId:string;role:string}) {
-    const role=String(userContext.role||'').toUpperCase();if(!['COBRADOR','SUPERVISORA','ADMIN'].includes(role))return;
-    try{const prisma=PrismaService.getInstance(),end=new Date();end.setHours(23,59,59,999);const schedules=await prisma.paymentSchedule.findMany({where:{installmentNumber:1,scheduledDate:{lte:end},status:{in:['PENDING','PARTIAL']},credit:{status:'ACTIVE',payments:{none:{}},...(role==='COBRADOR'?{client:{assignedCollectorId:userContext.userId}}:{})}},include:{credit:{include:{client:true}}},take:100});for(const schedule of schedules){const client=schedule.credit.client;await this.createNotification({userId:userContext.userId,type:'FIRST_COLLECTION_DUE',priority:schedule.scheduledDate<new Date()?'HIGH':'MEDIUM',title:'Primer cobro pendiente',message:`${client.firstName} ${client.lastName} · primer abono ${schedule.scheduledDate.toLocaleDateString('es-MX')}`,entity:'Credit',entityId:schedule.creditId});}}catch{}
+  static async ensureOperationalNotices(userContext: { userId: string; role: string }) {
+    const role = String(userContext.role || '').toUpperCase();
+    if (!['COBRADOR', 'VENDEDORA', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return;
+
+    try {
+      const prisma = PrismaService.getInstance();
+      const now = new Date();
+      const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+
+      if (['COBRADOR', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+        const schedules = await prisma.paymentSchedule.findMany({
+          where: {
+            scheduledDate: { lte: endOfDay },
+            status: { in: ['PENDING', 'PARTIAL'] },
+            credit: {
+              status: 'ACTIVE',
+              ...(role === 'COBRADOR' ? { client: { assignedCollectorId: userContext.userId } } : {}),
+            },
+          },
+          include: { credit: { include: { client: true } } },
+          orderBy: { scheduledDate: 'asc' },
+          take: 150,
+        });
+
+        for (const schedule of schedules) {
+          const client = schedule.credit.client;
+          const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
+          const isFirst = schedule.installmentNumber === 1;
+          const overdue = schedule.scheduledDate < startOfDay;
+          await this.createNotification({
+            userId: userContext.userId,
+            type: isFirst ? 'FIRST_COLLECTION_DUE' : overdue ? 'OVERDUE_CLIENT' : 'COLLECTION_ROUTE_DUE',
+            priority: overdue ? 'HIGH' : isFirst ? 'HIGH' : 'MEDIUM',
+            title: isFirst ? 'Primer cobro pendiente' : overdue ? 'Cobro vencido' : 'Cobro en ruta para hoy',
+            message: `${fullName} · abono ${schedule.installmentNumber} · ${schedule.scheduledDate.toLocaleDateString('es-MX')}`,
+            entity: 'Credit',
+            entityId: schedule.creditId,
+          });
+        }
+      }
+
+      if (['VENDEDORA', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+        const stocks = await prisma.inventoryStock.findMany({
+          include: { product: true, warehouse: true },
+          take: 250,
+        });
+        for (const stock of stocks.filter((x: any) => x.quantityAvailable <= Math.max(x.product.reorderPoint, x.product.minStock))) {
+          await this.createNotification({
+            userId: userContext.userId,
+            type: 'INVENTORY_REORDER_REQUIRED',
+            priority: stock.quantityAvailable <= 0 ? 'CRITICAL' : 'HIGH',
+            title: stock.quantityAvailable <= 0 ? 'Producto sin existencia' : 'Inventario crítico',
+            message: `${stock.product.name} · ${stock.quantityAvailable} disponibles · ${stock.warehouse.name}`,
+            entity: 'InventoryStock',
+            entityId: stock.id,
+          });
+        }
+
+        const authorizations = await prisma.authorizationRequest.findMany({
+          where: {
+            status: 'PENDING',
+            ...(role === 'VENDEDORA' ? { requestedBy: userContext.userId } : {}),
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 100,
+        });
+        for (const item of authorizations) {
+          await this.createNotification({
+            userId: userContext.userId,
+            type: 'AUTHORIZATION_PENDING',
+            priority: 'HIGH',
+            title: 'Autorización pendiente',
+            message: `${item.type} · solicitada ${item.createdAt.toLocaleDateString('es-MX')}`,
+            entity: 'AuthorizationRequest',
+            entityId: item.id,
+          });
+        }
+      }
+
+      if (['COBRADOR', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+        const conflicts = await prisma.syncConflict.findMany({
+          where: {
+            resolvedAt: null,
+            ...(role === 'COBRADOR' ? { syncOperation: { userId: userContext.userId } } : {}),
+          },
+          include: { syncOperation: true },
+          orderBy: { detectedAt: 'asc' },
+          take: 100,
+        });
+        for (const conflict of conflicts) {
+          await this.createNotification({
+            userId: userContext.userId,
+            type: 'OFFLINE_CONFLICT',
+            priority: conflict.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+            title: 'Conflicto de sincronización',
+            message: conflict.description || `${conflict.conflictType} requiere revisión`,
+            entity: 'SyncConflict',
+            entityId: conflict.id,
+          });
+        }
+      }
+    } catch {
+      // La bandeja sigue disponible aunque una fuente operativa esté temporalmente fuera de línea.
+    }
   }
+
+  static async ensureFirstCollectionNotices(userContext: { userId: string; role: string }) {
+    return this.ensureOperationalNotices(userContext);
+  }
+
   /**
    * Crea una notificación para un usuario evitando duplicados abiertos con el mismo tipo, entidad y entityId.
    */
