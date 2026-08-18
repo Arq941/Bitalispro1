@@ -125,8 +125,7 @@ export class SalesService {
       return { id: `item_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`, saleId, productId: it.productId, quantity: qty, unitPrice, subtotal: itemSubtotal, minimumAuthorizedPrice, negotiatedPrice, discount: itemTotalListPrice.minus(itemSubtotal), financedAmount: itemSubtotal, total: itemSubtotal };
     });
     const engancheCliente = new Decimal(dto.engancheCliente || 0);
-    const ratio = new Decimal(dto.aporteEmpresaRatio !== undefined ? dto.aporteEmpresaRatio : 1.0);
-    const aporteEmpresa = engancheCliente.mul(ratio);
+    const aporteEmpresa = FinancialRulesService.calcularAporteEmpresa(engancheCliente);
     const calcResult = FinancialRulesService.calcularSaldoFinanciado({ precioLista: subtotal, engancheCliente, aporteEmpresa });
     if (!calcResult.esInvarianteValida) throw new Error(`Invariante financiera inválida: ${calcResult.mensajesValidacion.join(', ')}`);
     const totalDiscount = calcResult.descuentoComercialTotal, totalFinanced = calcResult.saldoFinanciado;
@@ -160,12 +159,13 @@ export class SalesService {
     const downPaymentStatus = paymentMethod === 'CASH' ? 'COMPLETED' : 'PENDING_VERIFICATION';
     const downPayment = { id: dpId, saleId: dto.saleId, amount, paymentMethod, status: downPaymentStatus, cashMovementId: null as string | null, createdBy: userContext.userId, createdAt: new Date() };
     const ccId = `cc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const companyContribution = { id: ccId, saleId: dto.saleId, amount, rule: 'MATCH_DOWN_PAYMENT_1_TO_1', percentageOrRatio: new Decimal(1.0), createdBy: userContext.userId, createdAt: new Date() };
+    const companyContributionAmount = FinancialRulesService.calcularAporteEmpresa(amount);
+    const companyContribution = { id: ccId, saleId: dto.saleId, amount: companyContributionAmount, rule: 'MATCH_DOWN_PAYMENT_UP_TO_200', percentageOrRatio: amount.greaterThan(0) ? companyContributionAmount.div(amount) : new Decimal(0), createdBy: userContext.userId, createdAt: new Date() };
     if (paymentMethod === 'CASH' && dto.cashSessionId) { try { const prisma = PrismaService.getInstance(); const cm = await prisma.cashMovement.create({ data: { cashSessionId: dto.cashSessionId, type: 'DOWN_PAYMENT', amount: amount.toNumber(), description: `Enganche de venta ${sale.saleNumber}` } }); downPayment.cashMovementId = cm.id; } catch { downPayment.cashMovementId = `cm_${Date.now()}`; } }
-    try { const prisma = PrismaService.getInstance(); await prisma.saleDownPayment.create({ data: { id: downPayment.id, saleId: downPayment.saleId, amount: amount.toNumber(), paymentMethod: paymentMethod as any, status: downPayment.status, cashMovementId: downPayment.cashMovementId, createdBy: downPayment.createdBy } }); await prisma.companyContribution.create({ data: { id: companyContribution.id, saleId: companyContribution.saleId, amount: amount.toNumber(), rule: companyContribution.rule, percentageOrRatio: companyContribution.percentageOrRatio.toNumber(), createdBy: companyContribution.createdBy } }); } catch { SalesStore.downPayments.set(dto.saleId, downPayment); SalesStore.companyContributions.set(dto.saleId, companyContribution); }
+    try { const prisma = PrismaService.getInstance(); await prisma.saleDownPayment.create({ data: { id: downPayment.id, saleId: downPayment.saleId, amount: amount.toNumber(), paymentMethod: paymentMethod as any, status: downPayment.status, cashMovementId: downPayment.cashMovementId, createdBy: downPayment.createdBy } }); await prisma.companyContribution.create({ data: { id: companyContribution.id, saleId: companyContribution.saleId, amount: companyContribution.amount.toNumber(), rule: companyContribution.rule, percentageOrRatio: companyContribution.percentageOrRatio.toNumber(), createdBy: companyContribution.createdBy } }); } catch { SalesStore.downPayments.set(dto.saleId, downPayment); SalesStore.companyContributions.set(dto.saleId, companyContribution); }
     await AuditLogService.log({ userId: userContext.userId, action: 'DOWN_PAYMENT_CREATED', entity: 'SaleDownPayment', entityId: dpId, newValues: JSON.stringify({ amount, paymentMethod, status: downPaymentStatus }), idempotencyKey: dto.idempotencyKey });
-    await AuditLogService.log({ userId: userContext.userId, action: 'COMPANY_CONTRIBUTION_CREATED', entity: 'CompanyContribution', entityId: ccId, newValues: JSON.stringify({ amount, rule: 'MATCH_DOWN_PAYMENT_1_TO_1' }), idempotencyKey: dto.idempotencyKey });
-    const response = { downPayment, companyContribution, descuentoComercialGenerado: amount.plus(amount) };
+    await AuditLogService.log({ userId: userContext.userId, action: 'COMPANY_CONTRIBUTION_CREATED', entity: 'CompanyContribution', entityId: ccId, newValues: JSON.stringify({ amount: companyContributionAmount, rule: companyContribution.rule }), idempotencyKey: dto.idempotencyKey });
+    const response = { downPayment, companyContribution, descuentoComercialGenerado: amount.plus(companyContributionAmount) };
     if (dto.idempotencyKey) await IdempotencyService.record(dto.idempotencyKey, `/api/sales/${dto.saleId}/down-payment`, response, 201);
     return response;
   }
@@ -201,7 +201,7 @@ export class SalesService {
     if (!hasValidDownPayment) throw new Error('No se puede crear el crédito: Se requiere enganche completado o excepción autorizada.');
     const frequency = dto.paymentFrequency || 'WEEKLY'; const installmentsCount = dto.installmentsCount || 10; const firstPaymentDate = dto.firstPaymentDate ? new Date(dto.firstPaymentDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const items: any[] = sale.items || []; const createdCredits: any[] = []; const allSchedules: any[] = [];
-    const saleSubtotal = new Decimal(sale.subtotal || sale.totalAmount); const saleEnganche = new Decimal(downPaymentRecord?.amount || 0); const saleAporte = new Decimal(saleEnganche);
+    const saleSubtotal = new Decimal(sale.subtotal || sale.totalAmount); const saleEnganche = new Decimal(downPaymentRecord?.amount || 0); const saleAporte = FinancialRulesService.calcularAporteEmpresa(saleEnganche);
     for (let i = 0; i < items.length; i++) {
       const item = items[i]; const itemSubtotal = new Decimal(item.subtotal || item.total); let itemEnganche = new Decimal(0), itemAporte = new Decimal(0);
       if (saleSubtotal.greaterThan(0)) { const ratio = itemSubtotal.div(saleSubtotal); itemEnganche = saleEnganche.mul(ratio).toDecimalPlaces(2); itemAporte = saleAporte.mul(ratio).toDecimalPlaces(2); }

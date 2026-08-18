@@ -19,6 +19,14 @@ export interface FinancialCalculationResult {
 }
 
 export class FinancialRulesService {
+  public static readonly APORTE_EMPRESA_MAXIMO = new Decimal(200);
+
+  /** Iguala el enganche del cliente, con un tope empresarial de $200. */
+  public static calcularAporteEmpresa(engancheCliente: number | string | Decimal): Decimal {
+    const enganche = Decimal.max(new Decimal(engancheCliente), 0);
+    return Decimal.min(enganche, this.APORTE_EMPRESA_MAXIMO).toDecimalPlaces(2);
+  }
+
   /**
    * Calculador de Regla Financiera Fundamental BITALIS
    * SALDO FINANCIADO = PRECIO LISTA - ENGANCHE CLIENTE - APORTE EMPRESA
