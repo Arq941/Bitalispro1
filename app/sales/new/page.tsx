@@ -73,7 +73,7 @@ export default function NewSalePage(){
    setSaving(true);setError('');
    const key=newIdempotencyKey('sale');
    try{
-     const j:any=await apiClient('/api/sales',{method:'POST',idempotencyKey:key,body:JSON.stringify({clientId,saleType,items:detailed.map(i=>({productId:i.product!.id,quantity:i.qty,unitPrice:i.list||i.price,negotiatedPrice:i.price,minimumAuthorizedPrice:i.min||i.price})),engancheCliente:enganche,idempotencyKey:key})});
+     const j:any=await apiClient('/api/sales',{method:'POST',idempotencyKey:key,body:JSON.stringify({clientId,saleType,items:detailed.map(i=>({productId:i.product!.id,quantity:i.qty,unitPrice:i.list||i.price,negotiatedPrice:i.price,minimumAuthorizedPrice:i.min||i.price})),engancheCliente:enganche,paymentFrequency:'WEEKLY',installmentsCount:Math.max(1,estimatedWeeks),firstPaymentDate:`${firstPaymentDate}T12:00:00`,idempotencyKey:key})});
      if(saleType==='CREDIT'&&j?.status!=='PENDING_AUTHORIZATION'){await apiClient(`/api/sales/${j.id}/credit`,{method:'POST',idempotencyKey:`${key}-credit`,body:JSON.stringify({paymentFrequency:'WEEKLY',installmentsCount:Math.max(1,estimatedWeeks),firstPaymentDate:`${firstPaymentDate}T12:00:00`,idempotencyKey:`${key}-credit`})});j.firstPaymentDate=firstPaymentDate;}
      haptic('success');
      setResult(j);

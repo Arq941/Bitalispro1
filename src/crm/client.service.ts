@@ -63,6 +63,10 @@ class InStore {
 }
 
 export class ClientService {
+  private static failClosedInProduction(error: unknown) {
+    if (process.env.NODE_ENV === 'production') throw error;
+  }
+
   public static clearMemoryStore() {
     InStore.clear();
   }
@@ -104,7 +108,7 @@ export class ClientService {
         }
       }
       return `${prefix}${nextSequence.toString().padStart(4, '0')}`;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // In-memory fallback
       const existingFolios = Array.from(InStore.clients.values())
         .map((c) => c.clientNumber)
@@ -138,7 +142,7 @@ export class ClientService {
         where: { id: clientId },
         select: { id: true, assignedSellerId: true, assignedCollectorId: true, zoneId: true, createdBy: true, customerType: true, status: true },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       client = InStore.clients.get(clientId);
     }
 
@@ -224,7 +228,7 @@ export class ClientService {
           longitude: data.longitude,
         },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // In-memory fallback
       created = clientData;
       InStore.clients.set(created.id, created);
@@ -312,7 +316,7 @@ export class ClientService {
       ]);
 
       return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // In-memory fallback
       let list = Array.from(InStore.clients.values());
 
@@ -354,7 +358,7 @@ export class ClientService {
       });
 
       if (client) return client;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // Fallback
     }
 
@@ -397,7 +401,7 @@ export class ClientService {
         },
       });
       if (client) return client;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // Fallback
     }
 
@@ -471,7 +475,7 @@ export class ClientService {
           zoneId: data.zoneId ?? oldClient.zoneId,
         },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       oldClient = InStore.clients.get(id);
       if (!oldClient) throw new Error('Cliente no encontrado.');
 
@@ -558,7 +562,7 @@ export class ClientService {
 
         return newAddress;
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       // In-memory fallback
       if (data.isPrimary) {
         InStore.addresses.forEach((a) => {
@@ -632,7 +636,7 @@ export class ClientService {
         newValues: JSON.stringify(reference),
       });
       return reference;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.references.set(refId, refObj);
       AuditLogService.log({
         userId: userContext.userId,
@@ -693,7 +697,7 @@ export class ClientService {
         newValues: JSON.stringify(profile),
       });
       return profile;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.profiles.set(clientId, profileObj);
       AuditLogService.log({
         userId: userContext.userId,
@@ -775,7 +779,7 @@ export class ClientService {
         newValues: JSON.stringify(media),
       });
       return media;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.media.set(mediaId, mediaObj);
       InStore.timeline.push({
         id: `tl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -830,7 +834,7 @@ export class ClientService {
           rejectionReason: status === 'REJECTED' ? comment : null,
         },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       existing = InStore.media.get(mediaId);
       if (!existing) throw new Error('Evidencia no encontrada.');
 
@@ -868,7 +872,7 @@ export class ClientService {
     try {
       const prisma = PrismaService.getInstance();
       original = await prisma.clientMedia.findUnique({ where: { id: mediaId } });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       original = InStore.media.get(mediaId);
     }
 
@@ -932,7 +936,7 @@ export class ClientService {
         newValues: JSON.stringify(newMedia),
       });
       return newMedia;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       original.status = 'REPLACED';
       InStore.media.set(mediaId, original);
       InStore.media.set(newMediaId, newMediaObj);
@@ -971,7 +975,7 @@ export class ClientService {
     try {
       const prisma = PrismaService.getInstance();
       client = await prisma.client.findUnique({ where: { id: clientId } });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       client = InStore.clients.get(clientId);
     }
 
@@ -1023,7 +1027,7 @@ export class ClientService {
       });
 
       return result;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       client.riskLevel = newLevel;
       InStore.clients.set(clientId, client);
       InStore.riskHistory.push(riskEntry);
@@ -1100,7 +1104,7 @@ export class ClientService {
       });
 
       return note;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.notes.set(noteId, noteObj);
       InStore.timeline.push({
         id: `tl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -1145,7 +1149,7 @@ export class ClientService {
           deletedBy: userContext.userId,
         },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       note = InStore.notes.get(noteId);
       if (!note) throw new Error('Nota no encontrada.');
 
@@ -1225,7 +1229,7 @@ export class ClientService {
       });
 
       return visit;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.visits.set(visitId, visitObj);
       InStore.timeline.push({
         id: `tl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -1300,7 +1304,7 @@ export class ClientService {
       });
 
       return renewal;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InStore.renewals.set(renewalId, renewalObj);
       InStore.timeline.push({
         id: `tl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -1341,7 +1345,7 @@ export class ClientService {
         include: { items: { include: { product: { select: { id: true, sku: true, name: true, brand: true } } } } },
         orderBy: { createdAt: 'desc' },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       return [];
     }
   }
@@ -1371,7 +1375,7 @@ export class ClientService {
           saldoActual: c.saldoActual,
         }))
       );
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       return [];
     }
   }
@@ -1391,7 +1395,7 @@ export class ClientService {
         where: { clientId },
         orderBy: { createdAt: 'desc' },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       return InStore.timeline.filter((t) => t.clientId === clientId).reverse();
     }
   }
