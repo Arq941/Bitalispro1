@@ -11,7 +11,7 @@ function splitName(name:string){const parts=name.trim().replace(/\s+/g,' ').spli
 export async function POST(req:NextRequest){
  try{
   const user=getClientUserContext(req);
-  if(user.role!=='VENDEDORA')return NextResponse.json({success:false,error:'El alta rápida está disponible únicamente para vendedoras.'},{status:403});
+  if(!['ADMIN','SUPERVISORA','VENDEDORA','COBRADOR'].includes(user.role))return NextResponse.json({success:false,error:'Tu rol no puede registrar altas rápidas.'},{status:403});
   await PermissionService.requirePermission(user.userId,'clients.create');
   const intakeUser={...user,intakeOnly:true as const};
   const form=await req.formData(),fullName=clean(form.get('name')),phone=clean(form.get('phone'));
