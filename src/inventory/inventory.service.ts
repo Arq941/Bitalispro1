@@ -963,15 +963,20 @@ export class InventoryService {
       order = InventoryStore.orders.get(orderId);
     }
 
-    if (!order) throw new Error('Product order not found');
+    if (!order) throw new Error('Orden de compra no encontrada.');
+    if (order.status === 'CANCELLED') throw new Error('No se puede recibir una orden cancelada.');
+    if (order.status === 'COMPLETED') throw new Error('La orden ya fue recibida por completo.');
+    if (!receivedItems.length) throw new Error('Indica al menos una cantidad recibida.');
 
     let allItemsFullyReceived = true;
 
     for (const rec of receivedItems) {
       const item = order.items.find((i: any) => i.productId === rec.productId);
-      if (!item) continue;
+      if (!item) throw new Error('La recepción incluye un producto que no pertenece a la orden.');
+      if (!Number.isInteger(Number(rec.quantityReceived)) || Number(rec.quantityReceived) <= 0) throw new Error('La cantidad recibida debe ser un entero mayor a cero.');
 
-      const newTotalReceived = item.quantityReceived + rec.quantityReceived;
+      const newTotalReceived = Number(item.quantityReceived || 0) + Number(rec.quantityReceived);
+      if (newTotalReceived > Number(item.quantityRequested)) throw new Error(`No puedes recibir más de lo solicitado para el producto ${rec.productId}.`);
       item.quantityReceived = newTotalReceived;
 
       if (newTotalReceived < item.quantityRequested) {
