@@ -2,6 +2,8 @@ name: Production Build Readiness
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 jobs:
   production-build-readiness:
@@ -22,6 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Validate role security invariants
+        run: npm run test:security
 
       - name: Validate MySQL Prisma schema
         run: npm run prisma:mysql:validate
