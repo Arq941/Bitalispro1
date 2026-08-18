@@ -26,7 +26,9 @@ export interface CreateSaleDto {
   saleType?: 'CASH' | 'CREDIT';
   items: CreateSaleItemDto[];
   engancheCliente?: number | string | Decimal;
-  aporteEmpresaRatio?: number; // Default 1.0 (1:1)
+  paymentFrequency?: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  installmentsCount?: number;
+  firstPaymentDate?: string | Date;
   idempotencyKey?: string;
 }
 
@@ -112,6 +114,7 @@ export class SalesService {
     const saleNumber = await this.generateSaleNumber();
     const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     let totalListPrice = new Decimal(0), subtotal = new Decimal(0), requiresAuthorization = false;
+    const authorizationMetadata = saleType === 'CREDIT' ? { paymentFrequency: dto.paymentFrequency || 'WEEKLY', installmentsCount: dto.installmentsCount || 10, firstPaymentDate: dto.firstPaymentDate ? new Date(dto.firstPaymentDate).toISOString() : new Date(Date.now() + 7 * 86400000).toISOString() } : null;
     const authReasons: string[] = [];
     if (dto.items.length === 2) { requiresAuthorization = true; authReasons.push('TWO_PRODUCT_SALE'); }
     const itemsData = dto.items.map((it, idx) => {
@@ -135,10 +138,10 @@ export class SalesService {
     try {
       const prisma = PrismaService.getInstance();
       createdSale = await prisma.sale.create({ data: { id: saleRecord.id, saleNumber: saleRecord.saleNumber, clientId: saleRecord.clientId, sellerId: saleRecord.sellerId, supervisorId: saleRecord.supervisorId, saleType: saleRecord.saleType as any, status: saleRecord.status as any, subtotal: saleRecord.subtotal.toNumber(), totalListPrice: saleRecord.totalListPrice.toNumber(), totalDiscount: saleRecord.totalDiscount.toNumber(), totalFinanced: saleRecord.totalFinanced.toNumber(), totalAmount: saleRecord.totalFinanced.toNumber(), idempotencyKey: saleRecord.idempotencyKey, items: { create: itemsData.map((i) => ({ id: i.id, productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice.toNumber(), subtotal: i.subtotal.toNumber(), minimumAuthorizedPrice: i.minimumAuthorizedPrice.toNumber(), negotiatedPrice: i.negotiatedPrice.toNumber(), discount: i.discount.toNumber(), financedAmount: i.financedAmount.toNumber(), total: i.total.toNumber() })) } }, include: { items: true, client: true } });
-      if (requiresAuthorization) for (const reason of authReasons) await prisma.authorizationRequest.create({ data: { type: reason.startsWith('PRICE') ? 'PRICE_OVERRIDE' : 'TWO_PRODUCT_SALE', status: 'PENDING', requestedBy: userContext.userId, saleId, reason } });
+      if (requiresAuthorization) for (const reason of authReasons) await prisma.authorizationRequest.create({ data: { type: reason.startsWith('PRICE') ? 'PRICE_OVERRIDE' : 'TWO_PRODUCT_SALE', status: 'PENDING', requestedBy: userContext.userId, saleId, reason: authorizationMetadata ? `${reason}\nMETA:${JSON.stringify(authorizationMetadata)}` : reason } });
     } catch {
       SalesStore.sales.set(saleRecord.id, saleRecord); for (const item of itemsData) SalesStore.saleItems.set(item.id, item);
-      if (requiresAuthorization) for (const reason of authReasons) { const authReq = { id: `auth_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, type: reason.startsWith('PRICE') ? 'PRICE_OVERRIDE' : 'TWO_PRODUCT_SALE', status: 'PENDING', requestedBy: userContext.userId, saleId, reason, createdAt: new Date() }; SalesStore.authorizationRequests.set(authReq.id, authReq); }
+      if (requiresAuthorization) for (const reason of authReasons) { const authReq = { id: `auth_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, type: reason.startsWith('PRICE') ? 'PRICE_OVERRIDE' : 'TWO_PRODUCT_SALE', status: 'PENDING', requestedBy: userContext.userId, saleId, reason: authorizationMetadata ? `${reason}\nMETA:${JSON.stringify(authorizationMetadata)}` : reason, createdAt: new Date() }; SalesStore.authorizationRequests.set(authReq.id, authReq); }
       createdSale = saleRecord;
     }
     for (const item of itemsData) await InventoryService.reserveStock({ productId: item.productId, warehouseId, quantity: item.quantity, saleId, userId: userContext.userId, idempotencyKey: dto.idempotencyKey ? `${dto.idempotencyKey}_res_${item.productId}` : undefined });
