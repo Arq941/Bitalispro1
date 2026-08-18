@@ -1032,6 +1032,29 @@ export class InventoryService {
       });
     }
 
+    // Comprobante inmutable por cada recepción parcial o total.
+    try {
+      const prisma = PrismaService.getInstance();
+      const receiptNumber = `REC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await prisma.purchaseReceipt.create({
+        data: {
+          receiptNumber,
+          orderId,
+          warehouseId: order.warehouseId,
+          receivedBy: userId || 'usr_system',
+          receiptType: allItemsFullyReceived ? 'RECEPCION_TOTAL' : 'RECEPCION_PARCIAL',
+          notes: `Recepción de orden ${order.orderNumber}`,
+          items: {
+            create: receivedItems.filter((rec) => Number(rec.quantityReceived) > 0).map((rec) => {
+              const source = order.items.find((item: any) => item.productId === rec.productId);
+              const unitCost = Number(source?.unitCost || 0);
+              return { productId: rec.productId, quantityReceived: Number(rec.quantityReceived), unitCost, totalCost: unitCost * Number(rec.quantityReceived) };
+            }),
+          },
+        },
+      });
+    } catch {}
+
     // Update order status
     order.status = allItemsFullyReceived ? 'COMPLETED' : 'PARTIAL_RECEIVED';
     order.updatedAt = new Date();
