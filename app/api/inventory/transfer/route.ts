@@ -1,21 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { InventoryService } from '@/src/inventory/inventory.service';
-import { SecurityService } from '@/src/server/auth/security.service';
+import {NextRequest,NextResponse} from 'next/server';
+import {InventoryService} from '@/src/inventory/inventory.service';
+import {extractUserContext} from '@/src/sales/sales-auth.helper';
+import {PermissionService} from '@/src/server/auth/permission.service';
 
-export async function POST(req: NextRequest) {
-  try {
-    const authHeader = req.headers.get('authorization');
-    let userId = 'usr_system';
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const verified = SecurityService.verifyAccessToken(token);
-      if (verified) userId = verified.sub;
-    }
-
-    const body = await req.json();
-    const result = await InventoryService.transferStock({ ...body, userId });
-    return NextResponse.json({ success: true, result });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
-  }
-}
+export async function POST(req:NextRequest){try{const user=await extractUserContext(req);await PermissionService.requirePermission(user.userId,'inventory.manage');const body=await req.json();const quantity=Number(body?.quantity);if(!body?.fromWarehouseId||!body?.toWarehouseId||!body?.productId)throw new Error('Origen, destino y producto son obligatorios.');if(!Number.isInteger(quantity)||quantity<=0)throw new Error('La cantidad debe ser un entero mayor a cero.');if(!String(body?.reason||'').trim())throw new Error('El motivo de la transferencia es obligatorio.');const result=await InventoryService.transferStock({...body,quantity,reason:String(body.reason).trim(),userId:user.userId});return NextResponse.json({success:true,result});}catch(error:any){const message=String(error?.message||'No pudimos transferir la existencia.');return NextResponse.json({success:false,error:message},{status:message.includes('UNAUTHORIZED')?401:message.startsWith('FORBIDDEN:')?403:400});}}
