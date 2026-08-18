@@ -883,7 +883,7 @@ model CompanyContribution {
   id                String   @id @default(uuid())
   saleId            String   @unique
   amount            Decimal  @db.Decimal(12, 2)
-  rule              String   @default("MATCH_DOWN_PAYMENT_1_TO_1")
+  rule              String   @default("MATCH_DOWN_PAYMENT_UP_TO_200")
   percentageOrRatio Decimal  @default(1.00) @db.Decimal(12, 2)
   createdBy         String?
   createdAt         DateTime @default(now())
