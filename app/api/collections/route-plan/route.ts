@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { SecurityService } from '@/src/server/auth/security.service';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
 type Point = {
   id: string;
@@ -95,6 +96,8 @@ async function handleRoutePlan(req: NextRequest, body: Record<string, unknown>) 
     if (!verified?.sub || !verified?.role) {
       return NextResponse.json({ error: 'UNAUTHORIZED: Token inválido o expirado.' }, { status: 401 });
     }
+
+    await PermissionService.requirePermission(verified.sub, 'route.view');
 
     const latitude = Number(body.latitude ?? body.lat);
     const longitude = Number(body.longitude ?? body.lng);
