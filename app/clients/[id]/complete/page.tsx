@@ -14,7 +14,7 @@ const empty:Form={firstName:'',lastName:'',secondLastName:'',phone:'',secondaryP
 const emptyAddress:AddressForm={street:'',block:'',lot:'',neighborhood:'',crossStreets:'',frontOf:'',nextTo:'',notes:'',postalCode:'',city:'',municipality:'',state:''};
 const evidenceTypes=[['FACADE_PHOTO','Fachada'],['CLIENT_PHOTO','Cliente'],['CONTRACT_PHOTO','Contrato']] as const;
 
-function refPart(raw:string,label:string){return raw.match(new RegExp(`${label}:\\s*([^|]+)`,'i'))?.[1]?.trim()||'';}
+function refPart(raw:string,label:string){return raw.match(new RegExp(`(?:${label}):\\s*([^|]+)`,'i'))?.[1]?.trim()||'';}
 function splitReferences(value?:string|null){const raw=String(value||'').trim();const crossStreets=refPart(raw,'Entre calles|Entrecalles'),block=refPart(raw,'Manzana'),lot=refPart(raw,'Lote'),frontOf=refPart(raw,'Frente a'),nextTo=refPart(raw,'Al lado de');const notes=refPart(raw,'Referencia')||(!crossStreets&&!block&&!lot&&!frontOf&&!nextTo?raw:'');return {crossStreets,block,lot,frontOf,nextTo,notes};}
 function joinReferences(a:AddressForm){return [a.block.trim()?`Manzana: ${a.block.trim()}`:'',a.lot.trim()?`Lote: ${a.lot.trim()}`:'',a.crossStreets.trim()?`Entre calles: ${a.crossStreets.trim()}`:'',a.frontOf.trim()?`Frente a: ${a.frontOf.trim()}`:'',a.nextTo.trim()?`Al lado de: ${a.nextTo.trim()}`:'',a.notes.trim()?`Referencia: ${a.notes.trim()}`:''].filter(Boolean).join(' | ');}
 
