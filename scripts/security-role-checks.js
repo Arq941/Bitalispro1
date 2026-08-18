@@ -41,8 +41,8 @@ assert(clients.includes("if (context.role === 'VENDEDORA')") && clients.includes
   'seller client access must be limited to the ephemeral intake capability');
 assert(clients.includes("El rol de vendedora solo puede enviar altas rápidas"),
   'seller must not list or search clients');
-assert(intake.includes("if(user.role!=='VENDEDORA')"),
-  'quick intake endpoint must be seller-only');
+assert(intake.includes("['ADMIN','SUPERVISORA','VENDEDORA','COBRADOR'].includes(user.role)"),
+  'quick intake endpoint must be available to every authenticated operational role');
 assert(intake.includes('Respuesta deliberadamente ciega'),
   'quick intake response must not leak the created record');
 assert(androidSecurity.includes('LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L'),
