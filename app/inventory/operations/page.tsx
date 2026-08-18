@@ -6,7 +6,7 @@ import AppShell from '@/components/phase15/AppShell';
 import {apiClient,newIdempotencyKey} from '@/lib/phase15/apiClient';
 
 type Stock={productId:string;warehouseId:string;quantityOnHand:number;quantityReserved:number;quantityAvailable:number;product?:{name?:string;sku?:string};warehouse?:{name?:string}};
-const labels:Record<string,string>={DAMAGE:'Merma / dañado',RETURN_IN:'Devolución de cliente',ADJUSTMENT_IN:'Ajuste positivo',ADJUSTMENT_OUT:'Ajuste negativo'};
+const labels:Record<string,string>={DAMAGE:'Merma / dañado',RETURN_IN:'Devolución de cliente',SUPPLIER_RETURN:'Devolución a proveedor',ADJUSTMENT_IN:'Ajuste positivo',ADJUSTMENT_OUT:'Ajuste negativo'};
 export default function InventoryOperationsPage(){
  const router=useRouter(),[stocks,setStocks]=useState<Stock[]>([]),[movements,setMovements]=useState<any[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[ok,setOk]=useState(''),[selected,setSelected]=useState(''),[operation,setOperation]=useState('DAMAGE'),[quantity,setQuantity]=useState('1'),[reason,setReason]=useState('');
  const load=async()=>{setLoading(true);try{const [a,b]:any[]=await Promise.all([apiClient('/api/inventory'),apiClient('/api/inventory/operations')]);setStocks(a?.inventory||[]);setMovements(b?.movements||[]);}catch(e:any){setError(e.message);}finally{setLoading(false)}};useEffect(()=>{void load()},[]);
