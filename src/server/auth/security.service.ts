@@ -12,6 +12,10 @@ export interface JwtPayload {
   exp?: number;
 }
 
+export interface PasswordSetupPayload extends JwtPayload {
+  purpose?: 'password-setup';
+}
+
 export class SecurityService {
   private static getJwtSecret(): string {
     return process.env.JWT_SECRET || 'bitalis_super_secret_jwt_key_360_prod_998234';
@@ -81,6 +85,17 @@ export class SecurityService {
     } catch {
       return null;
     }
+  }
+
+  public static generatePasswordSetupToken(payload: {sub:string;permissionVersion:number;email:string}) {
+    return jwt.sign({...payload,sessionId:'password-setup',purpose:'password-setup'},this.getJwtSecret(),{expiresIn:'30m'});
+  }
+
+  public static verifyPasswordSetupToken(token:string): PasswordSetupPayload|null {
+    try {
+      const payload=jwt.verify(token,this.getJwtSecret()) as PasswordSetupPayload;
+      return payload.purpose==='password-setup'&&payload.sessionId==='password-setup'?payload:null;
+    } catch { return null; }
   }
 
   /**
