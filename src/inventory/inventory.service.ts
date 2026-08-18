@@ -82,6 +82,10 @@ export class InventoryStore {
 }
 
 export class InventoryService {
+  private static failClosedInProduction(error: unknown) {
+    if (process.env.NODE_ENV === 'production') throw error;
+  }
+
   static stocks = InventoryStore.stocks;
 
   static clearMemoryStore() {
@@ -99,7 +103,7 @@ export class InventoryService {
     try {
       const prisma = PrismaService.getInstance();
       existingCode = await prisma.warehouse.findUnique({ where: { code: dto.code } });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       existingCode = Array.from(InventoryStore.warehouses.values()).find((w) => w.code === dto.code);
     }
 
@@ -144,7 +148,7 @@ export class InventoryService {
         newValues: JSON.stringify(created),
       });
       return created;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InventoryStore.warehouses.set(warehouse.id, warehouse);
       await AuditLogService.log({
         userId,
@@ -162,7 +166,7 @@ export class InventoryService {
       const prisma = PrismaService.getInstance();
       const list = await prisma.warehouse.findMany();
       if (list.length > 0) return list;
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
     return Array.from(InventoryStore.warehouses.values());
   }
 
@@ -208,7 +212,7 @@ export class InventoryService {
         idempotencyKey,
         notes: 'Initial stock setup',
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       const stock = {
         id: `stk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         warehouseId,
@@ -249,7 +253,7 @@ export class InventoryService {
           quantityAvailable: stock.quantityOnHand - stock.quantityReserved,
         };
       }
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     const key = this.getStockKey(warehouseId, productId);
     const inMem = InventoryStore.stocks.get(key);
@@ -277,7 +281,7 @@ export class InventoryService {
         include: { product: true, warehouse: true },
       });
       if (stocks.length > 0) return stocks;
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     const all = Array.from(InventoryStore.stocks.values());
     if (warehouseId) return all.filter((s) => s.warehouseId === warehouseId);
@@ -335,7 +339,7 @@ export class InventoryService {
           notes: record.notes,
         },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InventoryStore.kardex.push(record);
     }
 
@@ -362,7 +366,7 @@ export class InventoryService {
         orderBy: { createdAt: 'desc' },
       });
       if (list.length > 0) return list;
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     let res = [...InventoryStore.kardex];
     if (productId) res = res.filter((k) => k.productId === productId);
@@ -431,7 +435,7 @@ export class InventoryService {
             createdBy: dto.userId,
           },
         });
-      } catch {
+      } catch (error) { this.failClosedInProduction(error);
         const key = this.getStockKey(dto.warehouseId, dto.productId);
         const inMemStock = InventoryStore.stocks.get(key) || {
           warehouseId: dto.warehouseId,
@@ -469,7 +473,7 @@ export class InventoryService {
     try {
       const prisma = PrismaService.getInstance();
       reservation = await prisma.inventoryReservation.findUnique({ where: { id: reservationId } });
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     if (!reservation) {
       reservation = InventoryStore.reservations.get(reservationId);
@@ -494,7 +498,7 @@ export class InventoryService {
         where: { warehouseId_productId: { warehouseId: reservation.warehouseId, productId: reservation.productId } },
         data: { quantityReserved: newReserved, quantityAvailable: newAvailable },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       reservation.status = 'RELEASED';
       reservation.releasedAt = new Date();
       reservation.updatedAt = new Date();
@@ -559,7 +563,7 @@ export class InventoryService {
 
         expiredCount++;
       }
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     // Process memory active reservations
     for (const res of InventoryStore.reservations.values()) {
@@ -614,7 +618,7 @@ export class InventoryService {
       try {
         const prisma = PrismaService.getInstance();
         reservation = await prisma.inventoryReservation.findUnique({ where: { id: data.reservationId } });
-      } catch {
+      } catch (error) { this.failClosedInProduction(error);
         reservation = InventoryStore.reservations.get(data.reservationId);
       }
 
@@ -635,7 +639,7 @@ export class InventoryService {
             where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: data.productId } },
             data: { quantityOnHand: newOnHand, quantityReserved: newReserved, quantityAvailable: newAvailable },
           });
-        } catch {
+        } catch (error) { this.failClosedInProduction(error);
           reservation.status = 'CONVERTED_TO_DELIVERY';
           reservation.convertedAt = new Date();
           const key = this.getStockKey(data.warehouseId, data.productId);
@@ -679,7 +683,7 @@ export class InventoryService {
         where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: data.productId } },
         data: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       const key = this.getStockKey(data.warehouseId, data.productId);
       const st = InventoryStore.stocks.get(key);
       if (st) {
@@ -719,7 +723,7 @@ export class InventoryService {
         where: { warehouseId_productId: { warehouseId: dto.warehouseId, productId: dto.productId } },
         data: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       const key = this.getStockKey(dto.warehouseId, dto.productId);
       const st = InventoryStore.stocks.get(key) || {
         warehouseId: dto.warehouseId,
@@ -766,7 +770,7 @@ export class InventoryService {
         where: { warehouseId_productId: { warehouseId: dto.warehouseId, productId: dto.productId } },
         data: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       const key = this.getStockKey(dto.warehouseId, dto.productId);
       const st = InventoryStore.stocks.get(key);
       if (st) {
@@ -831,7 +835,7 @@ export class InventoryService {
           update: { quantityOnHand: destNewOnHand, quantityAvailable: destNewAvailable },
         }),
       ]);
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       const sourceKey = this.getStockKey(dto.fromWarehouseId, dto.productId);
       const destKey = this.getStockKey(dto.toWarehouseId, dto.productId);
 
@@ -943,7 +947,7 @@ export class InventoryService {
       });
       InventoryStore.orders.set(created.id, created);
       return created;
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InventoryStore.orders.set(order.id, order);
       return order;
     }
@@ -957,7 +961,7 @@ export class InventoryService {
         where: { id: orderId },
         include: { items: true },
       });
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     if (!order) {
       order = InventoryStore.orders.get(orderId);
@@ -1006,7 +1010,7 @@ export class InventoryService {
           where: { id: item.id },
           data: { quantityReceived: newTotalReceived },
         });
-      } catch {
+      } catch (error) { this.failClosedInProduction(error);
         const key = this.getStockKey(order.warehouseId, rec.productId);
         const st = InventoryStore.stocks.get(key) || {
           warehouseId: order.warehouseId,
@@ -1055,7 +1059,7 @@ export class InventoryService {
           },
         },
       });
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     // Update order status
     order.status = allItemsFullyReceived ? 'COMPLETED' : 'PARTIAL_RECEIVED';
@@ -1067,7 +1071,7 @@ export class InventoryService {
         where: { id: orderId },
         data: { status: order.status, updatedAt: order.updatedAt },
       });
-    } catch {}
+    } catch (error) { this.failClosedInProduction(error);}
 
     return order;
   }
@@ -1078,7 +1082,7 @@ export class InventoryService {
         include: { warehouse: true, supplierRef: true, items: { include: { product: true } }, receipts: { include: { items: true } } },
         orderBy: { createdAt: 'desc' },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       return Array.from(InventoryStore.orders.values()).sort((a: any, b: any) => +new Date(b.createdAt) - +new Date(a.createdAt));
     }
   }
@@ -1088,7 +1092,7 @@ export class InventoryService {
     try {
       const prisma = PrismaService.getInstance();
       order = await prisma.productOrder.findUnique({ where: { id: orderId }, include: { items: true } });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       order = InventoryStore.orders.get(orderId);
     }
     if (!order) throw new Error('Orden de compra no encontrada.');
@@ -1101,7 +1105,7 @@ export class InventoryService {
     try {
       const prisma = PrismaService.getInstance();
       order = await prisma.productOrder.update({ where: { id: orderId }, data: { status: 'CANCELLED', notes }, include: { items: { include: { product: true } }, warehouse: true } });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       order.status = 'CANCELLED'; order.notes = notes; order.updatedAt = new Date(); InventoryStore.orders.set(orderId, order);
     }
     await AuditLogService.log({ userId, action: 'PRODUCT_ORDER_CANCELLED', entity: 'ProductOrder', entityId: orderId, newValues: JSON.stringify({ status: 'CANCELLED', reason }) });
@@ -1123,7 +1127,7 @@ export class InventoryService {
         create: { warehouseId: data.warehouseId, productId: data.productId, quantityOnHand: newOnHand, quantityReserved: 0, quantityAvailable: newAvailable },
         update: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
       });
-    } catch {
+    } catch (error) { this.failClosedInProduction(error);
       InventoryStore.stocks.set(this.getStockKey(data.warehouseId, data.productId), { ...stock, quantityOnHand: newOnHand, quantityAvailable: newAvailable, updatedAt: new Date() });
     }
     await this.recordKardexMovement({ warehouseId: data.warehouseId, productId: data.productId, quantity: Math.abs(data.quantityDelta), movementType: 'ADJUSTMENT', previousQuantity: Number(stock.quantityOnHand), newQuantity: newOnHand, userId: data.userId, idempotencyKey: data.idempotencyKey, notes: `${data.quantityDelta > 0 ? 'Ajuste positivo' : 'Ajuste negativo'}: ${data.reason}` });
