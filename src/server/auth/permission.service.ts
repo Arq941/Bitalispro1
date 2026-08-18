@@ -71,14 +71,10 @@ const SECURE_ROLE_DEFAULTS: Record<string, readonly string[]> = {
     'commissions.view', 'reports.view', 'audit.view',
   ],
   VENDEDORA: [
-    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
-    'sales.view', 'sales.create', 'inventory.view',
-    'renewals.view', 'commissions.view',
+    'clients.create',
   ],
   VENDEDOR: [
-    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
-    'sales.view', 'sales.create', 'inventory.view',
-    'renewals.view', 'commissions.view',
+    'clients.create',
   ],
   COBRADOR: [
     'dashboard.view', 'clients.view',
@@ -230,6 +226,10 @@ export class PermissionService {
     }
   }
 
+  private static isFieldSeller(roleNames: string[]) {
+    return roleNames.some((roleName) => roleName === 'VENDEDORA' || roleName === 'VENDEDOR');
+  }
+
   public static async getEffectivePermissionCodes(userId: string) {
     const { inherited, configured, roleNames } = await this.getPermissionContext(userId);
 
@@ -243,6 +243,7 @@ export class PermissionService {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
       if (override.effect === 'ALLOW') inherited.add(override.permission_code);
     }
+    if (this.isFieldSeller(roleNames)) return inherited.has('clients.create') ? ['clients.create'] : [];
     return Array.from(inherited).sort();
   }
 
@@ -250,12 +251,15 @@ export class PermissionService {
     const code = String(permissionCode || '').trim();
     if (!code) return false;
 
+    const context = await this.getPermissionContext(userId);
+    if (this.isFieldSeller(context.roleNames) && code !== 'clients.create') return false;
+
     const overrides = await this.getUserOverrides(userId);
     const override = overrides.find((item) => item.permission_code === code);
     if (override?.effect === 'DENY') return false;
     if (override?.effect === 'ALLOW') return true;
 
-    const { inherited, configured, roleNames } = await this.getPermissionContext(userId);
+    const { inherited, configured, roleNames } = context;
     if (!configured) this.applySecureRoleFallback(inherited, roleNames);
     return inherited.has(code);
   }
