@@ -243,7 +243,10 @@ export class PermissionService {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
       if (override.effect === 'ALLOW') inherited.add(override.permission_code);
     }
-    if (this.isFieldSeller(roleNames)) return inherited.has('clients.create') ? ['clients.create'] : [];
+    if (this.isFieldSeller(roleNames)) {
+      const intakeDenied = overrides.some((override) => override.permission_code === 'clients.create' && override.effect === 'DENY');
+      return intakeDenied ? [] : ['clients.create'];
+    }
     return Array.from(inherited).sort();
   }
 
@@ -257,6 +260,7 @@ export class PermissionService {
     const overrides = await this.getUserOverrides(userId);
     const override = overrides.find((item) => item.permission_code === code);
     if (override?.effect === 'DENY') return false;
+    if (this.isFieldSeller(context.roleNames) && code === 'clients.create') return true;
     if (override?.effect === 'ALLOW') return true;
 
     const { inherited, configured, roleNames } = context;
