@@ -1,30 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { InventoryService } from '@/src/inventory/inventory.service';
-import { SecurityService } from '@/src/server/auth/security.service';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
+import { PermissionService } from '@/src/server/auth/permission.service';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const user = await extractUserContext(req);
+    await PermissionService.requirePermission(user.userId, 'inventory.view');
     const warehouses = await InventoryService.getWarehouses();
-    return NextResponse.json({ success: true, warehouses });
+    return NextResponse.json({ success: true, warehouses }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const message = String(err?.message || 'No pudimos consultar almacenes.');
+    return NextResponse.json({ success: false, error: message }, { status: message.includes('UNAUTHORIZED') ? 401 : message.startsWith('FORBIDDEN:') ? 403 : 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    let userId = 'usr_system';
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const verified = SecurityService.verifyAccessToken(token);
-      if (verified) userId = verified.sub;
-    }
-
-    const body = await req.json();
-    const warehouse = await InventoryService.createWarehouse(body, userId);
+    const user = await extractUserContext(req);
+    await PermissionService.requirePermission(user.userId, 'inventory.manage');
+    const warehouse = await InventoryService.createWarehouse(await req.json(), user.userId);
     return NextResponse.json({ success: true, warehouse }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+    const message = String(err?.message || 'No pudimos crear el almacén.');
+    return NextResponse.json({ success: false, error: message }, { status: message.includes('UNAUTHORIZED') ? 401 : message.startsWith('FORBIDDEN:') ? 403 : 400 });
   }
 }
