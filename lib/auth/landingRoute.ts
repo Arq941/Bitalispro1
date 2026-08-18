@@ -1,4 +1,5 @@
 export const AUTHENTICATED_ROUTE_PRIORITY:[permission:string,href:string][]=[
+  ['clients.create','/clients/new'],
   ['dashboard.view','/dashboard'],
   ['reports.view','/control-center'],
   ['collections.view','/collections'],
@@ -6,7 +7,6 @@ export const AUTHENTICATED_ROUTE_PRIORITY:[permission:string,href:string][]=[
   ['sales.view','/sales'],
   ['sales.create','/sales/new'],
   ['clients.view','/clients'],
-  ['clients.create','/clients/new'],
   ['cash.view','/cash'],
   ['inventory.view','/inventory'],
   ['renewals.view','/renewals'],

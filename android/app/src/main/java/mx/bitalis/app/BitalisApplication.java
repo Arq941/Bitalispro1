@@ -3,6 +3,7 @@ package mx.bitalis.app;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.webkit.WebView;
@@ -14,11 +15,15 @@ import android.webkit.WebView;
  * al primer plano después de permanecer fuera de la app.
  */
 public class BitalisApplication extends Application implements Application.ActivityLifecycleCallbacks {
-    private static final long LOCK_AFTER_BACKGROUND_MS = 30_000L;
+    private static final long LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L;
+    private static final long CREDENTIAL_SESSION_MS = 8L * 60L * 60L * 1000L;
+    private static final String SECURITY_PREFS = "bitalis_security";
+    private static final String LAST_TRUSTED_UNLOCK_AT = "last_trusted_unlock_at";
 
     private int startedActivities = 0;
     private long lastBackgroundAt = 0L;
     private boolean biometricGateLaunching = false;
+    private boolean sessionResetRequired = false;
 
     @Override
     public void onCreate() {
@@ -28,8 +33,27 @@ public class BitalisApplication extends Application implements Application.Activ
     }
 
     public synchronized void markBiometricUnlocked() {
+        getSharedPreferences(SECURITY_PREFS, MODE_PRIVATE).edit()
+                .putLong(LAST_TRUSTED_UNLOCK_AT, System.currentTimeMillis())
+                .apply();
         lastBackgroundAt = 0L;
         biometricGateLaunching = false;
+    }
+
+    public synchronized boolean isCredentialSessionExpired() {
+        SharedPreferences preferences = getSharedPreferences(SECURITY_PREFS, MODE_PRIVATE);
+        long lastUnlockAt = preferences.getLong(LAST_TRUSTED_UNLOCK_AT, 0L);
+        return lastUnlockAt <= 0L || System.currentTimeMillis() - lastUnlockAt >= CREDENTIAL_SESSION_MS;
+    }
+
+    public synchronized void requireSessionReset() {
+        sessionResetRequired = true;
+    }
+
+    public synchronized boolean consumeSessionResetRequired() {
+        boolean required = sessionResetRequired;
+        sessionResetRequired = false;
+        return required;
     }
 
     private void refreshWebDeliveryCacheOnProcessStart() {

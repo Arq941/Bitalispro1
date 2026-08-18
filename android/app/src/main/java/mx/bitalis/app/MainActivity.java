@@ -26,6 +26,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebStorage;
 import android.widget.Toast;
 
 import org.json.JSONObject;
@@ -470,7 +471,24 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (webView != null) webView.onResume();
+        if (((BitalisApplication) getApplication()).consumeSessionResetRequired()) {
+            clearExpiredCredentialSession();
+        }
         checkForAppUpdate();
+    }
+
+    private void clearExpiredCredentialSession() {
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.removeAllCookies(null);
+        cookieManager.flush();
+        WebStorage.getInstance().deleteAllData();
+        if (webView != null) {
+            webView.clearHistory();
+            webView.clearFormData();
+            webView.clearCache(true);
+            webView.loadUrl(START_URL);
+        }
+        Toast.makeText(this, "Sesión vencida por seguridad. Ingresa nuevamente.", Toast.LENGTH_LONG).show();
     }
 
     @Override

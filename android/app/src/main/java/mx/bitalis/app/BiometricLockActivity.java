@@ -137,7 +137,10 @@ public class BiometricLockActivity extends Activity {
                 authenticated = true;
                 promptActive = false;
                 statusView.setText("Identidad confirmada.");
-                ((BitalisApplication) getApplication()).markBiometricUnlocked();
+                BitalisApplication application = (BitalisApplication) getApplication();
+                boolean credentialsExpired = application.isCredentialSessionExpired();
+                if (credentialsExpired) application.requireSessionReset();
+                application.markBiometricUnlocked();
                 continueToBitalis();
             }
 
