@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect,useMemo,useState} from 'react';
-import {useRouter} from 'next/navigation';
+import {useRouter,useSearchParams} from 'next/navigation';
 import {Banknote,CheckCircle2,ChevronRight,Loader2,MapPin,Phone,Search,ShieldCheck,WifiOff,X} from 'lucide-react';
 import AppShell from '@/components/phase15/AppShell';
 import {apiClient,newIdempotencyKey} from '@/lib/phase15/apiClient';
@@ -12,9 +12,9 @@ type Credit={id:string;saldoActual:number;suggestedInstallment:number;proximaVis
 const money=new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'});
 
 export default function CollectionsPage(){
- const router=useRouter();
+ const router=useRouter(),searchParams=useSearchParams();
  const[credits,setCredits]=useState<Credit[]>([]),[loading,setLoading]=useState(true),[query,setQuery]=useState(''),[selected,setSelected]=useState<Credit|null>(null),[amount,setAmount]=useState(''),[method,setMethod]=useState<'CASH'|'BANK_TRANSFER'>('CASH'),[saving,setSaving]=useState(false),[confirmOpen,setConfirmOpen]=useState(false),[error,setError]=useState(''),[result,setResult]=useState<any>(null),[position,setPosition]=useState<any>(null);
- const load=async()=>{setLoading(true);setError('');try{const j:any=await apiClient('/api/collections/portfolio');setCredits(j?.data||[]);}catch(e:any){setError(e.message);}finally{setLoading(false);}};
+ const load=async()=>{setLoading(true);setError('');try{const j:any=await apiClient('/api/collections/portfolio');const nextCredits:Credit[]=j?.data||[];setCredits(nextCredits);const requested=searchParams.get('credit');if(requested)setSelected(nextCredits.find(item=>item.id===requested)||null);}catch(e:any){setError(e.message);}finally{setLoading(false);}};
  useEffect(()=>{void load();if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>setPosition({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy}),()=>{}, {enableHighAccuracy:true,timeout:8000});},[]);
  useEffect(()=>{if(selected){setAmount(String(Math.min(Number(selected.suggestedInstallment||0)||Number(selected.saldoActual),Number(selected.saldoActual))));setConfirmOpen(false);}},[selected?.id]);
  const filtered=useMemo(()=>credits.filter(c=>`${c.client.firstName} ${c.client.lastName} ${c.client.clientNumber} ${c.client.phone||''}`.toLowerCase().includes(query.toLowerCase())),[credits,query]);

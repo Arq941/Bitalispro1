@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
 
     const prisma = PrismaService.getInstance();
     const { start, end, mexicoDate } = mexicoTodayRange();
+    const scope = req.nextUrl.searchParams.get('scope') === 'all' ? 'all' : 'daily';
 
     const baseWhere: any = {
       status: 'ACTIVE',
@@ -114,19 +115,19 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const todays = mapped
-      .filter(c => c.collection.overdue || c.collection.dueToday || c.collection.preferredToday)
+    const sorted = [...mapped]
       .sort((a, b) => b.collection.priorityScore - a.collection.priorityScore || Number(b.saldoActual) - Number(a.saldoActual));
-
-    const data = todays.length ? todays : mapped
-      .sort((a, b) => b.collection.priorityScore - a.collection.priorityScore || Number(b.saldoActual) - Number(a.saldoActual));
+    const todays = sorted
+      .filter(c => c.collection.overdue || c.collection.dueToday || c.collection.preferredToday);
+    const data = scope === 'all' ? sorted : (todays.length ? todays : sorted);
 
     return NextResponse.json({
       success: true,
       date: mexicoDate,
-      mode: todays.length ? 'DAILY_PRIORITY' : 'ACTIVE_FALLBACK',
+      scope,
+      mode: scope === 'all' ? 'FULL_PORTFOLIO' : todays.length ? 'DAILY_PRIORITY' : 'ACTIVE_FALLBACK',
       totalActive: mapped.length,
-      totalToday: data.length,
+      totalToday: todays.length,
       data,
     });
   } catch (err: any) {
