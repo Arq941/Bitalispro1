@@ -20,6 +20,9 @@ const notifications = read('src/notifications/notifications.service.ts');
 const clientFile = read('app/clients/[id]/complete/page.tsx');
 const financialRules = read('src/financial/financial-rules.service.ts');
 const salesService = read('src/sales/sales.service.ts');
+const purchaseOrders = read('app/api/product-orders/route.ts');
+const inventoryOperations = read('app/api/inventory/operations/route.ts');
+const inventoryService = read('src/inventory/inventory.service.ts');
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');
@@ -72,5 +75,12 @@ assert(newSale.includes("Math.min(enganche,200)") &&
   salesService.includes('FinancialRulesService.calcularAporteEmpresa(engancheCliente)') &&
   salesService.includes('FinancialRulesService.calcularAporteEmpresa(saleEnganche)'),
   'the $200 company contribution cap must be consistent in UI, sale and credit');
+
+assert(purchaseOrders.includes("requirePermission(user.userId, 'inventory.manage')") && inventoryOperations.includes("requirePermission(user.userId, 'inventory.manage')"),
+  'purchase orders and stock mutations must require inventory.manage');
+assert(inventoryService.includes('cancelProductOrder') && inventoryService.includes("status: 'CANCELLED'") && inventoryService.includes('purchaseReceipt.create'),
+  'procurement must support auditable cancellation and immutable receipts');
+assert(inventoryOperations.includes("body.operation === 'DAMAGE'") && inventoryOperations.includes("body.operation === 'RETURN_IN'") && inventoryOperations.includes("body.operation === 'SUPPLIER_RETURN'"),
+  'inventory operations must expose damage, customer return and supplier return flows');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');

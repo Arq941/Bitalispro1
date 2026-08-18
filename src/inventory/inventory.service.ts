@@ -963,15 +963,20 @@ export class InventoryService {
       order = InventoryStore.orders.get(orderId);
     }
 
-    if (!order) throw new Error('Product order not found');
+    if (!order) throw new Error('Orden de compra no encontrada.');
+    if (order.status === 'CANCELLED') throw new Error('No se puede recibir una orden cancelada.');
+    if (order.status === 'COMPLETED') throw new Error('La orden ya fue recibida por completo.');
+    if (!receivedItems.length) throw new Error('Indica al menos una cantidad recibida.');
 
     let allItemsFullyReceived = true;
 
     for (const rec of receivedItems) {
       const item = order.items.find((i: any) => i.productId === rec.productId);
-      if (!item) continue;
+      if (!item) throw new Error('La recepción incluye un producto que no pertenece a la orden.');
+      if (!Number.isInteger(Number(rec.quantityReceived)) || Number(rec.quantityReceived) <= 0) throw new Error('La cantidad recibida debe ser un entero mayor a cero.');
 
-      const newTotalReceived = item.quantityReceived + rec.quantityReceived;
+      const newTotalReceived = Number(item.quantityReceived || 0) + Number(rec.quantityReceived);
+      if (newTotalReceived > Number(item.quantityRequested)) throw new Error(`No puedes recibir más de lo solicitado para el producto ${rec.productId}.`);
       item.quantityReceived = newTotalReceived;
 
       if (newTotalReceived < item.quantityRequested) {
@@ -1027,6 +1032,31 @@ export class InventoryService {
       });
     }
 
+    allItemsFullyReceived = (order.items || []).every((item: any) => Number(item.quantityReceived || 0) >= Number(item.quantityRequested || 0));
+
+    // Comprobante inmutable por cada recepción parcial o total.
+    try {
+      const prisma = PrismaService.getInstance();
+      const receiptNumber = `REC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await prisma.purchaseReceipt.create({
+        data: {
+          receiptNumber,
+          orderId,
+          warehouseId: order.warehouseId,
+          receivedBy: userId || 'usr_system',
+          receiptType: allItemsFullyReceived ? 'RECEPCION_TOTAL' : 'RECEPCION_PARCIAL',
+          notes: `Recepción de orden ${order.orderNumber}`,
+          items: {
+            create: receivedItems.filter((rec) => Number(rec.quantityReceived) > 0).map((rec) => {
+              const source = order.items.find((item: any) => item.productId === rec.productId);
+              const unitCost = Number(source?.unitCost || 0);
+              return { productId: rec.productId, quantityReceived: Number(rec.quantityReceived), unitCost, totalCost: unitCost * Number(rec.quantityReceived) };
+            }),
+          },
+        },
+      });
+    } catch {}
+
     // Update order status
     order.status = allItemsFullyReceived ? 'COMPLETED' : 'PARTIAL_RECEIVED';
     order.updatedAt = new Date();
@@ -1041,4 +1071,63 @@ export class InventoryService {
 
     return order;
   }
+  static async getProductOrders() {
+    try {
+      const prisma = PrismaService.getInstance();
+      return await prisma.productOrder.findMany({
+        include: { warehouse: true, supplierRef: true, items: { include: { product: true } }, receipts: { include: { items: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch {
+      return Array.from(InventoryStore.orders.values()).sort((a: any, b: any) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    }
+  }
+
+  static async cancelProductOrder(orderId: string, userId?: string, reason?: string) {
+    let order: any;
+    try {
+      const prisma = PrismaService.getInstance();
+      order = await prisma.productOrder.findUnique({ where: { id: orderId }, include: { items: true } });
+    } catch {
+      order = InventoryStore.orders.get(orderId);
+    }
+    if (!order) throw new Error('Orden de compra no encontrada.');
+    if (order.status === 'CANCELLED') throw new Error('La orden ya fue cancelada.');
+    if (order.status === 'COMPLETED') throw new Error('Una orden recibida por completo no puede cancelarse.');
+    if ((order.items || []).some((item: any) => Number(item.quantityReceived || 0) > 0)) {
+      throw new Error('La orden tiene mercancía recibida. Registra una devolución o ajuste antes de cancelarla.');
+    }
+    const notes = [order.notes, reason ? `Cancelación: ${reason}` : 'Cancelación autorizada'].filter(Boolean).join(' | ');
+    try {
+      const prisma = PrismaService.getInstance();
+      order = await prisma.productOrder.update({ where: { id: orderId }, data: { status: 'CANCELLED', notes }, include: { items: { include: { product: true } }, warehouse: true } });
+    } catch {
+      order.status = 'CANCELLED'; order.notes = notes; order.updatedAt = new Date(); InventoryStore.orders.set(orderId, order);
+    }
+    await AuditLogService.log({ userId, action: 'PRODUCT_ORDER_CANCELLED', entity: 'ProductOrder', entityId: orderId, newValues: JSON.stringify({ status: 'CANCELLED', reason }) });
+    return order;
+  }
+
+  static async adjustStock(data: { warehouseId: string; productId: string; quantityDelta: number; reason: string; userId?: string; idempotencyKey?: string }) {
+    if (!Number.isInteger(data.quantityDelta) || data.quantityDelta === 0) throw new Error('El ajuste debe ser un número entero distinto de cero.');
+    if (!String(data.reason || '').trim()) throw new Error('El motivo del ajuste es obligatorio.');
+    const stock = await this.getStock(data.warehouseId, data.productId);
+    const newOnHand = Number(stock.quantityOnHand) + data.quantityDelta;
+    if (newOnHand < Number(stock.quantityReserved || 0)) throw new Error('El ajuste dejaría el stock por debajo de las unidades reservadas.');
+    if (newOnHand < 0) throw new Error('El stock físico no puede ser negativo.');
+    const newAvailable = newOnHand - Number(stock.quantityReserved || 0);
+    try {
+      const prisma = PrismaService.getInstance();
+      await prisma.inventoryStock.upsert({
+        where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: data.productId } },
+        create: { warehouseId: data.warehouseId, productId: data.productId, quantityOnHand: newOnHand, quantityReserved: 0, quantityAvailable: newAvailable },
+        update: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
+      });
+    } catch {
+      InventoryStore.stocks.set(this.getStockKey(data.warehouseId, data.productId), { ...stock, quantityOnHand: newOnHand, quantityAvailable: newAvailable, updatedAt: new Date() });
+    }
+    await this.recordKardexMovement({ warehouseId: data.warehouseId, productId: data.productId, quantity: Math.abs(data.quantityDelta), movementType: 'ADJUSTMENT', previousQuantity: Number(stock.quantityOnHand), newQuantity: newOnHand, userId: data.userId, idempotencyKey: data.idempotencyKey, notes: `${data.quantityDelta > 0 ? 'Ajuste positivo' : 'Ajuste negativo'}: ${data.reason}` });
+    return { success: true, previousOnHand: Number(stock.quantityOnHand), newOnHand, newAvailable };
+  }
+
 }
