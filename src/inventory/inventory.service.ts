@@ -1032,6 +1032,8 @@ export class InventoryService {
       });
     }
 
+    allItemsFullyReceived = (order.items || []).every((item: any) => Number(item.quantityReceived || 0) >= Number(item.quantityRequested || 0));
+
     // Comprobante inmutable por cada recepción parcial o total.
     try {
       const prisma = PrismaService.getInstance();
