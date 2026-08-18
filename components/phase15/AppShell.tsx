@@ -16,7 +16,7 @@ type SwipeStart={x:number;y:number;lastX:number;lastY:number;at:number}|null;
 const ShellContext=createContext<ShellContextValue|null>(null);
 
 const collector:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/route',label:'Ruta',icon:Route,permission:'route.view'},{href:'/collections',label:'Cobrar',icon:WalletCards,permission:'collections.view'},{href:'/portfolio',label:'Cartera',icon:Users,permission:'collections.view'},{href:'/cash',label:'Caja',icon:ReceiptText,permission:'cash.view'}];
-const seller:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/clients/new',label:'Alta',icon:UserPlus,permission:'clients.create'},{href:'/sales/new',label:'Venta',icon:ShoppingCart,permission:'sales.create'},{href:'/clients',label:'Clientes',icon:Users,permission:'clients.view'},{href:'/commissions',label:'Comisión',icon:Coins,permission:'commissions.view'}];
+const seller:NavItem[]=[{href:'/clients/new',label:'Alta rápida',icon:UserPlus,permission:'clients.create'}];
 const supervisor:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/portfolio',label:'Cartera',icon:WalletCards,permission:'collections.view'},{href:'/authorizations',label:'Autorizar',icon:ShieldCheck,permission:'sales.approve'},{href:'/renewals',label:'Renovar',icon:ClipboardCheck,permission:'renewals.view'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'}];
 const admin:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/portfolio',label:'Cartera',icon:WalletCards,permission:'collections.view'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'},{href:'/inventory',label:'Stock',icon:ClipboardCheck,permission:'inventory.view'},{href:'/settings',label:'Config.',icon:Settings,permission:'settings.manage'}];
 const menus:Record<string,NavItem[]>={COBRADOR:collector,VENDEDORA:seller,VENDEDOR:seller,SUPERVISORA:supervisor,SUPERVISOR:supervisor,ADMIN:admin};
@@ -104,17 +104,18 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
  },[hydrated,publicPath,user]);
 
  const role=(user?.role||'').toUpperCase();
+ const fieldSeller=role==='VENDEDORA'||role==='VENDEDOR';
  const nav=useMemo(()=>{const base=menus[role]||[];if(!permissions)return[];return base.filter(item=>permissions.has(item.permission));},[role,permissions]);
  const activeNavIndex=useMemo(()=>nav.findIndex(item=>item.href==='/dashboard'?pathname===item.href:pathname===item.href||pathname.startsWith(`${item.href}/`)),[nav,pathname]);
  useEffect(()=>{if(activeNavIndex>=0)lastNavIndex.current=activeNavIndex;},[activeNavIndex]);
- const needed=requiredPermission(pathname);const denied=!publicPath&&user!==null&&permissions!==null&&!!needed&&!permissions.has(needed);
- const deniedFallback=useMemo(()=>permissions?getAuthenticatedLandingRoute(Array.from(permissions)):'/access-unavailable',[permissions]);
+ const needed=requiredPermission(pathname);const denied=!publicPath&&user!==null&&permissions!==null&&(fieldSeller?pathname!=='/clients/new':!!needed&&!permissions.has(needed));
+ const deniedFallback=useMemo(()=>fieldSeller?'/clients/new':permissions?getAuthenticatedLandingRoute(Array.from(permissions)):'/access-unavailable',[fieldSeller,permissions]);
  useEffect(()=>{if(!denied)return;if(pathname!==deniedFallback)router.replace(deniedFallback);},[denied,deniedFallback,pathname,router]);
  const go=(href:string)=>{if(href===pathname)return;haptic('tap');router.push(href);};
  const privateReady=!publicPath&&hydrated&&user!==null;
 
  useEffect(()=>{
-  if(!privateReady)return;
+  if(!privateReady||fieldSeller)return;
   let alive=true;
   const refreshUnread=async()=>{
    try{
@@ -132,7 +133,7 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   window.addEventListener('bitalis:notifications-changed',onChanged);
   document.addEventListener('visibilitychange',onVisibility);
   return()=>{alive=false;window.removeEventListener('focus',onFocus);window.removeEventListener('bitalis:notifications-changed',onChanged);document.removeEventListener('visibilitychange',onVisibility);};
- },[privateReady,user?.id]);
+ },[privateReady,fieldSeller,user?.id]);
 
  const finishSwipe=useCallback((x:number,y:number)=>{
   const start=swipeStart.current;swipeStart.current=null;
