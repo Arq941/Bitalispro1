@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     else if (body.operation === 'RETURN_IN') result = await InventoryService.returnInventory({ ...common, saleId: body.saleId || undefined });
     else if (body.operation === 'ADJUSTMENT_IN') result = await InventoryService.adjustStock({ warehouseId: common.warehouseId, productId: common.productId, quantityDelta: common.quantity, reason: common.reason, userId: common.userId, idempotencyKey: common.idempotencyKey || undefined });
     else if (body.operation === 'ADJUSTMENT_OUT') result = await InventoryService.adjustStock({ warehouseId: common.warehouseId, productId: common.productId, quantityDelta: -common.quantity, reason: common.reason, userId: common.userId, idempotencyKey: common.idempotencyKey || undefined });
+    else if (body.operation === 'SUPPLIER_RETURN') result = await InventoryService.adjustStock({ warehouseId: common.warehouseId, productId: common.productId, quantityDelta: -common.quantity, reason: `Devolución a proveedor: ${common.reason}`, userId: common.userId, idempotencyKey: common.idempotencyKey || undefined });
     else throw new Error('Tipo de operación no permitido.');
     return NextResponse.json({ success: true, result }, { status: 201 });
   } catch (err: any) {
