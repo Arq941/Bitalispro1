@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
     const completedCreditIds = Array.from(new Set(visits.map(v => v.creditId).filter(Boolean))) as string[];
     const paidCreditIds = new Set(payments.map(p => p.creditId));
     const rescheduled = visits.filter(v => v.result === 'RESCHEDULED').length;
-    const noPay = visits.filter(v => v.result !== 'SUCCESS' && v.result !== 'RESCHEDULED').length;
+    const skipped = visits.filter(v => v.result === 'SKIPPED').length;
+    const noPay = visits.filter(v => !['SUCCESS', 'RESCHEDULED', 'SKIPPED'].includes(v.result)).length;
     const totalCollected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
     return NextResponse.json({
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
           paid: paidCreditIds.size,
           noPay,
           rescheduled,
-          skipped: 0,
+          skipped,
           totalCollected,
         },
       },
