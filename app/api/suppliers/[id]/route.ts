@@ -1,0 +1,6 @@
+import {NextRequest,NextResponse} from 'next/server';
+import {PrismaService} from '@/src/database/prisma.service';
+import {extractUserContext} from '@/src/sales/sales-auth.helper';
+import {PermissionService} from '@/src/server/auth/permission.service';
+
+export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){try{const user=await extractUserContext(req);await PermissionService.requirePermission(user.userId,'inventory.manage');const {id}=await params;const body=await req.json();const nextStatus=String(body?.status||'').toUpperCase();if(!['ACTIVE','INACTIVE'].includes(nextStatus))throw new Error('Estado inválido.');const prisma=PrismaService.getInstance();const supplier=await prisma.supplier.update({where:{id},data:{status:nextStatus}});await prisma.auditLog.create({data:{userId:user.userId,action:'SUPPLIER_STATUS_CHANGED',entity:'Supplier',entityId:id,newValues:JSON.stringify({status:nextStatus})}}).catch(()=>null);return NextResponse.json({success:true,supplier});}catch(error:any){const message=String(error?.message||'No pudimos actualizar el proveedor.');return NextResponse.json({success:false,error:message},{status:message.includes('UNAUTHORIZED')?401:message.startsWith('FORBIDDEN:')?403:400});}}

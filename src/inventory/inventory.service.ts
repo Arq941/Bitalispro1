@@ -52,6 +52,7 @@ export interface DamageInventoryDto {
 }
 
 export interface CreateProductOrderDto {
+  supplierId?: string;
   supplier?: string;
   warehouseId: string;
   items: Array<{
@@ -912,7 +913,8 @@ export class InventoryService {
     const order = {
       id: orderId,
       orderNumber,
-      supplier: dto.supplier || 'Proveedor General',
+      supplierId: dto.supplierId || null,
+      supplier: dto.supplier || null,
       warehouseId: dto.warehouseId,
       status: 'PENDING',
       totalAmount: totalDecimal,
@@ -928,6 +930,7 @@ export class InventoryService {
         data: {
           id: order.id,
           orderNumber: order.orderNumber,
+          supplierId: order.supplierId,
           supplier: order.supplier,
           warehouseId: order.warehouseId,
           status: 'PENDING',
