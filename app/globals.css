@@ -78,3 +78,53 @@ form .grid>*{min-width:0}
 
 @layer utilities{.bg-bitalis-primary{background-color:var(--bitalis-primary)}.bg-bitalis-dark{background-color:var(--bitalis-primary-dark)}.text-bitalis-primary{color:var(--bitalis-primary)}.border-bitalis-primary{border-color:var(--bitalis-primary)}.phase15-card{border:1px solid var(--bitalis-border);background:#fff;border-radius:1.5rem;box-shadow:0 8px 30px rgba(6,43,36,.06)}.phase15-action{background:var(--bitalis-action);color:#fff;font-weight:900;min-height:48px;border-radius:1rem}.safe-bottom{padding-bottom:max(1rem,env(safe-area-inset-bottom))}
 @media print{body{background-color:white!important;color:black!important;font-size:11px!important;margin:0!important;padding:0!important}.no-print{display:none!important}.print-only{display:block!important}@page{size:letter portrait;margin:.5cm}.print-grid-container{display:grid!important;grid-template-columns:1fr 1fr!important;grid-template-rows:1fr 1fr!important;gap:4mm!important;width:100%!important;height:100vh!important;page-break-after:always}.card-quarter-letter{border:1.5px dashed #333!important;padding:8px!important;box-sizing:border-box!important;background:#fff!important;color:#000!important;height:130mm!important;max-height:135mm!important;display:flex!important;flex-direction:column!important;justify-content:space-between!important;overflow:hidden!important;font-family:Arial,sans-serif!important}}}
+
+/* Sistema UX transversal BITALIS: jerarquía, estados y ergonomía compartidos. */
+:root{
+  --bitalis-radius-sm:14px;
+  --bitalis-radius-md:20px;
+  --bitalis-radius-lg:28px;
+  --bitalis-shadow-sm:0 4px 16px rgba(6,43,36,.055);
+  --bitalis-shadow-md:0 10px 32px rgba(6,43,36,.085);
+  --bitalis-header-height:68px;
+  --bitalis-nav-height:82px;
+}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--bitalis-header-height) + env(safe-area-inset-top))}
+body{line-height:1.5}
+main{isolation:isolate}
+h1,h2,h3{letter-spacing:-.018em;text-wrap:balance}
+p{overflow-wrap:break-word}
+button:disabled,[role="button"][aria-disabled="true"]{cursor:not-allowed;opacity:.55;transform:none!important}
+input::placeholder,textarea::placeholder{color:#8A9A94;opacity:1}
+input[type="number"],.bitalis-number{font-variant-numeric:tabular-nums}
+input[aria-invalid="true"],select[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#DC2626!important;background:#FEF2F2!important}
+[aria-busy="true"]{cursor:progress}
+:target{scroll-margin-top:calc(var(--bitalis-header-height) + 12px)}
+.bitalis-page{width:100%;max-width:80rem;margin-inline:auto;padding:12px}
+.bitalis-page-heading{display:flex;min-width:0;align-items:flex-start;justify-content:space-between;gap:12px}
+.bitalis-page-eyebrow{font-size:10px;line-height:1.2;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:var(--bitalis-action-dark)}
+.bitalis-page-title{margin-top:4px;font-size:clamp(1.25rem,5vw,1.75rem);line-height:1.15;font-weight:900;color:var(--bitalis-primary)}
+.bitalis-page-description{margin-top:6px;max-width:44rem;font-size:12px;line-height:1.55;color:var(--bitalis-muted)}
+.bitalis-section-heading{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;margin-bottom:10px}
+.bitalis-section-title{font-size:15px;line-height:1.25;font-weight:900;color:var(--bitalis-primary)}
+.bitalis-card{min-width:0;border:1px solid var(--bitalis-border);border-radius:var(--bitalis-radius-md);background:var(--bitalis-surface);box-shadow:var(--bitalis-shadow-sm)}
+.bitalis-card-interactive{transition:transform .14s ease,border-color .16s ease,box-shadow .16s ease}
+.bitalis-empty-state,.bitalis-error-state,.bitalis-success-state{display:flex;min-height:148px;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--bitalis-radius-md);padding:24px;text-align:center}
+.bitalis-empty-state{border:1px dashed #C9D8D0;background:#FAFCFB;color:var(--bitalis-muted)}
+.bitalis-error-state{border:1px solid #FECACA;background:#FEF2F2;color:#991B1B}
+.bitalis-success-state{border:1px solid #BBF7D0;background:#F0FDF4;color:#166534}
+.bitalis-status{display:inline-flex;min-height:26px;align-items:center;border-radius:999px;padding:4px 9px;font-size:9px;font-weight:900;line-height:1;text-transform:uppercase;letter-spacing:.05em}
+.bitalis-status-success{background:#DCFCE7;color:#166534}
+.bitalis-status-warning{background:#FEF3C7;color:#92400E}
+.bitalis-status-danger{background:#FEE2E2;color:#991B1B}
+.bitalis-status-neutral{background:#E8F1EC;color:#36564D}
+.bitalis-network-banner{position:sticky;top:calc(var(--bitalis-header-height) + env(safe-area-inset-top));z-index:35;display:flex;min-height:36px;align-items:center;justify-content:center;gap:7px;background:#FFF7ED;padding:7px 12px;color:#9A3412;font-size:11px;font-weight:900;box-shadow:0 4px 12px rgba(154,52,18,.08)}
+.bitalis-scroll-x{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.bitalis-scroll-x::-webkit-scrollbar{display:none}
+.bitalis-skeleton{position:relative;overflow:hidden;background:#E7F0EB}
+.bitalis-skeleton::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:bitalis-shimmer 1.35s infinite}
+@keyframes bitalis-shimmer{to{transform:translateX(100%)}}
+@media(min-width:640px){.bitalis-page{padding:20px}.bitalis-page-description{font-size:14px}}
+@media(hover:hover) and (pointer:fine){.bitalis-card-interactive:hover{transform:translateY(-2px);border-color:#BFD7CA;box-shadow:var(--bitalis-shadow-md)}button:not(:disabled):hover,[role="button"]:not([aria-disabled="true"]):hover{filter:saturate(1.04)}}
+@media(max-width:359px){:root{--bitalis-header-height:64px}.bitalis-page{padding:9px}.bitalis-page-title{font-size:1.2rem}.bitalis-page-description{font-size:11px}.bitalis-card{border-radius:18px}}
+@media(forced-colors:active){button,a,input,select,textarea{outline-color:CanvasText}.bitalis-card,.bitalis-android-surface{border:1px solid CanvasText}}
