@@ -10,7 +10,7 @@ const MAX_FILE=6*1024*1024;
 function removeFile(storageKey?:string|null){if(!storageKey)return;try{const p=MediaStorageService.resolveStoragePath(storageKey);if(fs.existsSync(p))fs.unlinkSync(p);}catch{}}
 
 export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
- try{const {id}=await params;const user=getClientUserContext(req);if(!await ClientService.checkClientAccess(id,user))return NextResponse.json({success:false,error:'FORBIDDEN: Sin acceso a evidencias de este cliente.'},{status:403});const prisma=PrismaService.getInstance();const media=await prisma.clientMedia.findMany({where:{clientId:id},orderBy:{createdAt:'desc'}});return NextResponse.json({success:true,media});}catch(err:any){return NextResponse.json({success:false,error:err.message},{status:500});}
+ try{const {id}=await params;const user=getClientUserContext(req);if(user.role==='VENDEDORA')return NextResponse.json({success:false,error:'FORBIDDEN: El rol de vendedora no puede visualizar imágenes.'},{status:403});const prisma=PrismaService.getInstance();const media=await prisma.clientMedia.findMany({where:{clientId:id},orderBy:{createdAt:'desc'}});return NextResponse.json({success:true,media});}catch(err:any){const message=String(err?.message||'No pudimos cargar las imágenes.');return NextResponse.json({success:false,error:message},{status:message.includes('UNAUTHORIZED')?401:message.includes('FORBIDDEN')?403:500});}
 }
 
 export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}){
