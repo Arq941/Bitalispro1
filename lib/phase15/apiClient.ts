@@ -103,3 +103,22 @@ export async function apiClient<T=any>(path:string, options:ApiOptions={}):Promi
 }
 
 export const newIdempotencyKey=(prefix='op')=>`${prefix}-${Date.now()}-${typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)}`;
+
+export async function apiBlob(path:string, retried=false):Promise<Blob>{
+  const token=accessToken();
+  const headers=new Headers();
+  if(token)headers.set('Authorization',`Bearer ${token}`);
+  let res:Response;
+  try{res=await fetch(path,{headers,cache:'no-store'});}catch{throw {status:0,code:'NETWORK',message:'No pudimos descargar la imagen.'} satisfies ApiError;}
+  if(res.status===401&&!retried){
+    const currentToken=accessToken();
+    if(token&&currentToken&&currentToken!==token)return apiBlob(path,true);
+    if(await refreshAccessToken())return apiBlob(path,true);
+    dispatchSessionExpiredOnce();
+  }
+  if(!res.ok){
+    const body=await res.json().catch(()=>({}));
+    throw friendly(res.status,body);
+  }
+  return res.blob();
+}
