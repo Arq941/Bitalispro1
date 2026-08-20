@@ -978,7 +978,7 @@ export class SalesService {
       const sale = await prisma.sale.findUnique({
         where: { id: saleId },
         include: {
-          items: true,
+          items: { include: { product: true } },
           client: true,
           seller: true,
           credits: { include: { schedules: true } },

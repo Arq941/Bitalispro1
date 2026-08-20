@@ -123,6 +123,7 @@ export default function CompleteClientPage() {
     [saving, setSaving] = useState(false),
     [gpsBusy, setGpsBusy] = useState(false),
     [locationInput, setLocationInput] = useState(""),
+    [locationResult, setLocationResult] = useState<any>(null),
     [resolvingLocation, setResolvingLocation] = useState(false),
     [mediaBusy, setMediaBusy] = useState(""),
     [deleting, setDeleting] = useState(false),
@@ -416,12 +417,14 @@ export default function CompleteClientPage() {
     haptic("tap");
     setResolvingLocation(true);
     setError("");
+    setLocationResult(null);
     try {
       const json: any = await apiClient("/api/geocode/resolve", {
         method: "POST",
         body: JSON.stringify({ input: locationInput.trim() }),
       });
       const g = json?.data || {};
+      setLocationResult(g);
       setForm((v) => ({
         ...v,
         latitude: String(g.latitude),
@@ -726,6 +729,13 @@ export default function CompleteClientPage() {
                     ? "INTERPRETANDO UBICACIÓN…"
                     : "USAR UBICACIÓN Y COMPLETAR DOMICILIO"}
                 </button>
+                {locationResult && (
+                  <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                    <p className="font-black">Ubicación interpretada · {String(locationResult.source || "MAPA").replaceAll("_", " ")}</p>
+                    <p className="mt-1 break-words">{Number(locationResult.latitude).toFixed(6)}, {Number(locationResult.longitude).toFixed(6)}</p>
+                    <p className="mt-1 text-[11px] text-emerald-800">{locationResult.displayName || "Verifica calle, colonia y código postal antes de guardar."}</p>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={captureGps}

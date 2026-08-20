@@ -14,6 +14,22 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
  catch(err:any){return NextResponse.json({error:err.message||'Error al obtener la venta'},{status:codeFromError(err)});}
 }
 
+export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
+ try{
+  const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');
+  if(!['ADMIN','SUPERVISORA'].includes(ctx.role))return NextResponse.json({error:'FORBIDDEN: Solo ADMIN o SUPERVISORA puede reasignar una venta.'},{status:403});
+  const{id}=await params,body=await req.json(),clientId=String(body?.clientId||'').trim();
+  if(!clientId)return NextResponse.json({error:'Selecciona el cliente correcto.'},{status:400});
+  const[sale,target]=await Promise.all([prisma.sale.findUnique({where:{id},include:{credits:true}}),prisma.client.findUnique({where:{id:clientId},select:{id:true,clientNumber:true,firstName:true,lastName:true}})]);
+  if(!sale)return NextResponse.json({error:'Venta no encontrada.'},{status:404});
+  if(!target)return NextResponse.json({error:'Cliente no encontrado.'},{status:404});
+  if(sale.clientId===clientId)return NextResponse.json(await SalesService.getSaleById(id));
+  await prisma.$transaction(async tx=>{await tx.sale.update({where:{id},data:{clientId}});await tx.credit.updateMany({where:{saleId:id},data:{clientId}})});
+  await AuditLogService.log({userId:ctx.userId,action:'SALE_CLIENT_REASSIGNED',entity:'Sale',entityId:id,oldValues:JSON.stringify({clientId:sale.clientId}),newValues:JSON.stringify({clientId,targetClientNumber:target.clientNumber}),notes:`Venta y ${sale.credits.length} crédito(s) relacionados al cliente correcto por ${ctx.role}.`});
+  return NextResponse.json(await SalesService.getSaleById(id));
+ }catch(err:any){return NextResponse.json({error:err.message||'No se pudo actualizar la venta.'},{status:codeFromError(err)});}
+}
+
 export async function DELETE(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
   const ctx=getSalesUserContext(req);if(ctx.role!=='ADMIN')return NextResponse.json({error:'FORBIDDEN: Solo ADMIN puede eliminar ventas.'},{status:403});const{id}=await params;
