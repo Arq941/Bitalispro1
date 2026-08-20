@@ -51,6 +51,17 @@ export async function GET(req: NextRequest) {
             phone: true, latitude: true, longitude: true, riskLevel: true,
             assignedCollectorId: true,
             profile: { select: { preferredCollectionDay: true } },
+            addresses: {
+              where: { isPrimary: true },
+              select: { street: true, exteriorNumber: true, neighborhood: true, postalCode: true },
+              take: 1,
+            },
+            media: verified.role === 'VENDEDORA' ? false : {
+              where: { mediaType: 'FACADE_PHOTO' },
+              select: { storageKey: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
         },
         sale: { select: { id: true, saleNumber: true, downPayment: { select: { id: true } }, credits: { select: { payments: { select: { id: true }, take: 1 } } } } },
@@ -103,7 +114,11 @@ export async function GET(req: NextRequest) {
         client: {
           ...credit.client,
           preferredCollectionDay: credit.client.profile?.preferredCollectionDay || null,
+          facadeStorageKey: verified.role === 'VENDEDORA' ? null : (credit.client as any).media?.[0]?.storageKey || null,
+          primaryAddress: credit.client.addresses?.[0] || null,
           profile: undefined,
+          media: undefined,
+          addresses: undefined,
         },
         collection: {
           overdue,
@@ -130,6 +145,17 @@ export async function GET(req: NextRequest) {
           id: true, clientNumber: true, firstName: true, lastName: true, secondLastName: true,
           phone: true, latitude: true, longitude: true, riskLevel: true, status: true,
           assignedCollectorId: true, profile: { select: { preferredCollectionDay: true } },
+          addresses: {
+            where: { isPrimary: true },
+            select: { street: true, exteriorNumber: true, neighborhood: true, postalCode: true },
+            take: 1,
+          },
+          media: verified.role === 'VENDEDORA' ? false : {
+            where: { mediaType: 'FACADE_PHOTO' },
+            select: { storageKey: true },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
           sales: { select: { id: true, saleNumber: true, saleType: true, status: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
@@ -151,7 +177,11 @@ export async function GET(req: NextRequest) {
         client: {
           ...client,
           preferredCollectionDay: client.profile?.preferredCollectionDay || null,
+          facadeStorageKey: verified.role === 'VENDEDORA' ? null : (client as any).media?.[0]?.storageKey || null,
+          primaryAddress: client.addresses?.[0] || null,
           profile: undefined,
+          media: undefined,
+          addresses: undefined,
           sales: undefined,
         },
         collection: {
