@@ -1,7 +1,7 @@
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v1`;
+const CACHE_NAME=`${CACHE_PREFIX}v2`;
 const CORE=[
-  '/','/dashboard','/route','/route/close','/collections','/clients','/cash','/notifications','/settings','/sync',
+  '/','/dashboard','/route','/route/close','/collections','/portfolio','/clients','/clients/new','/products','/inventory','/cash','/notifications','/settings','/sync',
   '/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'
 ];
 
