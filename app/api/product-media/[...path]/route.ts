@@ -17,7 +17,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
       return NextResponse.json({ error: 'La imagen no está disponible.' }, { status: 404 });
     }
 
-    return new NextResponse(stored.content, {
+    const body=stored.content.buffer.slice(stored.content.byteOffset,stored.content.byteOffset+stored.content.byteLength) as ArrayBuffer;
+    return new NextResponse(body, {
       headers: {
         'Content-Type': stored.mimeType || ProductMediaStorageService.contentTypeFor(storageKey),
         'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
