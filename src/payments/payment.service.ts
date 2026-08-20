@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { PrismaService } from '@/src/database/prisma.service';
+import { FinancialRulesService } from '@/src/financial/financial-rules.service';
 
 export interface RegisterPaymentDto {
   creditId: string;
@@ -11,6 +12,7 @@ export interface RegisterPaymentDto {
   gpsLatitude?: number;
   gpsLongitude?: number;
   notes?: string;
+  paymentType?: 'REGULAR' | 'DOWN_PAYMENT';
   idempotencyKey: string;
 }
 
@@ -39,8 +41,21 @@ export class PaymentService {
     if (credit.status !== 'ACTIVE') throw new Error('El crédito no está activo.');
 
     const currentBalance = new Decimal(credit.saldoActual);
-    if (amount.gt(currentBalance)) {
-      throw new Error(`El abono no puede ser mayor al saldo actual ($${currentBalance.toFixed(2)}).`);
+    const paymentType = dto.paymentType || 'REGULAR';
+    if (paymentType === 'DOWN_PAYMENT') {
+      const [existingDownPayment,salePaymentCount] = await Promise.all([
+        this.prisma.saleDownPayment.findUnique({ where: { saleId: credit.saleId } }),
+        this.prisma.payment.count({where:{credit:{saleId:credit.saleId}}}),
+      ]);
+      if (salePaymentCount > 0) throw new Error('El enganche sólo puede registrarse como el primer cobro de la venta.');
+      if (existingDownPayment) throw new Error('Esta venta ya tiene un enganche registrado.');
+    }
+    const companyContribution = paymentType === 'DOWN_PAYMENT'
+      ? FinancialRulesService.calcularAporteEmpresa(amount)
+      : new Decimal(0);
+    const totalBalanceReduction = amount.plus(companyContribution);
+    if (totalBalanceReduction.gt(currentBalance)) {
+      throw new Error(`El descuento total no puede ser mayor al saldo actual ($${currentBalance.toFixed(2)}).`);
     }
 
     if (dto.cashSessionId) {
@@ -66,25 +81,44 @@ export class PaymentService {
           gpsLatitude: dto.gpsLatitude ?? null,
           gpsLongitude: dto.gpsLongitude ?? null,
           notes: dto.notes || null,
-          paymentType: 'REGULAR',
+          paymentType,
           verifiedBy: dto.collectorId,
           verifiedAt: new Date(),
         },
       });
 
-      const newBalance = currentBalance.minus(amount);
+      const newBalance = currentBalance.minus(totalBalanceReduction);
       await tx.credit.update({
         where: { id: dto.creditId },
         data: {
           saldoActual: newBalance,
           status: newBalance.eq(0) ? 'SETTLED' : 'ACTIVE',
+          engancheCliente: paymentType === 'DOWN_PAYMENT' ? new Decimal(credit.engancheCliente).plus(amount) : credit.engancheCliente,
+          aporteEmpresa: paymentType === 'DOWN_PAYMENT' ? new Decimal(credit.aporteEmpresa).plus(companyContribution) : credit.aporteEmpresa,
           updatedAt: new Date(),
         },
       });
 
+      if (paymentType === 'DOWN_PAYMENT') {
+        await tx.saleDownPayment.create({data:{saleId:credit.saleId,amount,paymentMethod:dto.paymentMethod||'CASH',status:'COMPLETED',paymentId:payment.id,createdBy:dto.collectorId}});
+        await tx.companyContribution.create({data:{saleId:credit.saleId,amount:companyContribution,rule:'MATCH_DOWN_PAYMENT_UP_TO_200',percentageOrRatio:companyContribution.div(amount),createdBy:dto.collectorId}});
+        const saleCredits=await tx.credit.findMany({where:{saleId:credit.saleId}});
+        const financed=saleCredits.reduce((sum,item)=>sum.plus(new Decimal(item.id===credit.id?newBalance:item.saldoActual)),new Decimal(0));
+        await tx.sale.update({where:{id:credit.saleId},data:{totalDiscount:{increment:totalBalanceReduction},totalFinanced:financed,totalAmount:financed}});
+      }
+
       const paidBefore = credit.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0));
-      let remainingToAllocate = paidBefore.plus(amount);
+      let remainingToAllocate = paymentType === 'DOWN_PAYMENT' ? new Decimal(0) : paidBefore.plus(amount);
+      const pendingCount=credit.schedules.filter(schedule=>!['COMPLETED','CANCELLED'].includes(schedule.status)).length;
+      let pendingIndex=0,pendingAllocated=new Decimal(0);
       for (const schedule of credit.schedules) {
+        if(paymentType==='DOWN_PAYMENT'&&!['COMPLETED','CANCELLED'].includes(schedule.status)){
+          pendingIndex++;
+          const suggested=pendingIndex===pendingCount?newBalance.minus(pendingAllocated):newBalance.div(pendingCount).floor().toDecimalPlaces(2);
+          pendingAllocated=pendingAllocated.plus(suggested);
+          await tx.paymentSchedule.update({where:{id:schedule.id},data:{suggestedAmount:suggested,status:'PENDING',updatedAt:new Date()}});
+          continue;
+        }
         const scheduled = new Decimal(schedule.suggestedAmount);
         let status: 'PENDING' | 'PARTIAL' | 'COMPLETED' = 'PENDING';
         if (remainingToAllocate.gte(scheduled)) {
@@ -111,10 +145,10 @@ export class PaymentService {
             cashSessionId: dto.cashSessionId,
             collectorId: dto.collectorId,
             paymentId: payment.id,
-            type: 'PAYMENT',
+            type: paymentType === 'DOWN_PAYMENT' ? 'DOWN_PAYMENT' : 'PAYMENT',
             amount,
             reference: dto.creditId,
-            description: `Abono de crédito ${dto.creditId}`,
+            description: paymentType === 'DOWN_PAYMENT' ? `Enganche de venta ${credit.saleId}` : `Abono de crédito ${dto.creditId}`,
             clientCapturedAt: dto.clientCapturedAt ? new Date(dto.clientCapturedAt) : new Date(),
             serverReceivedAt: new Date(),
             idempotencyKey: `${dto.idempotencyKey}-cash`,
@@ -142,7 +176,7 @@ export class PaymentService {
         orderBy: { updatedAt: 'desc' },
       });
 
-      if (collectionRule) {
+      if (collectionRule && paymentType !== 'DOWN_PAYMENT') {
         const commissionAmount = amount.mul(new Decimal(collectionRule.rate));
         await tx.commission.create({
           data: {
@@ -165,7 +199,7 @@ export class PaymentService {
       await tx.auditLog.create({
         data: {
           userId: dto.collectorId,
-          action: 'PAYMENT_CREATED',
+          action: paymentType === 'DOWN_PAYMENT' ? 'FIRST_COLLECTION_DOWN_PAYMENT_CREATED' : 'PAYMENT_CREATED',
           entity: 'Payment',
           entityId: payment.id,
           newValues: JSON.stringify({
@@ -173,6 +207,8 @@ export class PaymentService {
             amount: amount.toString(),
             previousBalance: currentBalance.toString(),
             newBalance: newBalance.toString(),
+            companyContribution: companyContribution.toString(),
+            paymentType,
           }),
           idempotencyKey: dto.idempotencyKey,
         },
