@@ -129,13 +129,16 @@ export async function GET(req: NextRequest) {
           id: true, clientNumber: true, firstName: true, lastName: true, secondLastName: true,
           phone: true, latitude: true, longitude: true, riskLevel: true, status: true,
           assignedCollectorId: true, profile: { select: { preferredCollectionDay: true } },
+          sales: { select: { id: true, saleNumber: true, saleType: true, status: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       });
       allClients = clients.filter(client => !activeClientIds.has(client.id)).map(client => ({
         id: `client:${client.id}`,
-        saleId: null,
-        saleNumber: null,
+        saleId: client.sales?.[0]?.id || null,
+        saleNumber: client.sales?.[0]?.saleNumber || null,
+        saleStatus: client.sales?.[0]?.status || null,
+        hasSale: Boolean(client.sales?.length),
         clientId: client.id,
         principalAmount: 0,
         saldoActual: 0,
@@ -148,6 +151,7 @@ export async function GET(req: NextRequest) {
           ...client,
           preferredCollectionDay: client.profile?.preferredCollectionDay || null,
           profile: undefined,
+          sales: undefined,
         },
         collection: {
           overdue: false,
