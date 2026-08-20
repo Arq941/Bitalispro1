@@ -7,7 +7,7 @@ import {listQueued,removeQueued,OfflineOperation} from '@/lib/phase15/offlineQue
 import {syncQueuedOperations} from '@/lib/phase15/syncQueue';
 import {haptic} from '@/lib/ux/haptics';
 
-const label=(kind:string)=>({PAYMENT:'Cobro',VISIT:'Visita',RESCHEDULE:'Reprogramación',EXPENSE:'Gasto',DOWN_PAYMENT:'Enganche'} as Record<string,string>)[kind]||kind||'Operación';
+const label=(kind:string)=>({PAYMENT:'Cobro',VISIT:'Visita',CLIENT_INTAKE:'Alta de cliente',RESCHEDULE:'Reprogramación',EXPENSE:'Gasto',DOWN_PAYMENT:'Enganche'} as Record<string,string>)[kind]||kind||'Operación';
 
 export default function SyncPage(){
  const[rows,setRows]=useState<OfflineOperation[]>([]),[loading,setLoading]=useState(true),[syncing,setSyncing]=useState(false),[online,setOnline]=useState(true),[message,setMessage]=useState(''),[discarding,setDiscarding]=useState<OfflineOperation|null>(null),[working,setWorking]=useState(false);

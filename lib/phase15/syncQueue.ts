@@ -16,8 +16,20 @@ export async function syncQueuedOperations():Promise<SyncSummary>{
     const working:OfflineOperation={...row,state:'SYNCING',attempts:row.attempts+1,lastError:undefined};
     await updateQueued(working);
     try{
-      const body=row.body==null?undefined:{...row.body,idempotencyKey:row.idempotencyKey};
-      const json=await apiClient<any>(row.endpoint,{method:row.method,idempotencyKey:row.idempotencyKey,body:body==null?undefined:JSON.stringify(body),timeoutMs:20000});
+      let requestBody:BodyInit|undefined;
+      if(row.kind==='CLIENT_INTAKE'){
+        const form=new FormData();
+        Object.entries(row.body||{}).forEach(([key,value])=>{
+          if(value instanceof Blob)form.set(key,value,(value as File).name||`${key}.jpg`);
+          else if(value!==undefined&&value!==null&&String(value)!=='')form.set(key,String(value));
+        });
+        form.set('idempotencyKey',row.idempotencyKey);
+        requestBody=form;
+      }else{
+        const body=row.body==null?undefined:{...row.body,idempotencyKey:row.idempotencyKey};
+        requestBody=body==null?undefined:JSON.stringify(body);
+      }
+      const json=await apiClient<any>(row.endpoint,{method:row.method,idempotencyKey:row.idempotencyKey,body:requestBody,timeoutMs:row.kind==='CLIENT_INTAKE'?45000:20000});
       await removeQueued(row.id);synced++;
       window.dispatchEvent(new CustomEvent('bitalis:operation-synced',{detail:{...row,response:json}}));
     }catch(e:any){

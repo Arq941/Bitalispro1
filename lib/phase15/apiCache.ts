@@ -25,6 +25,15 @@ export function isOfflineCacheable(path:string,method='GET'){
     path.startsWith('/api/clients')||
     path.startsWith('/api/products')||
     path.startsWith('/api/inventory')||
+    path.startsWith('/api/orders')||
+    path.startsWith('/api/product-orders')||
+    path.startsWith('/api/warehouses')||
+    path.startsWith('/api/suppliers')||
+    path.startsWith('/api/sales')||
+    path.startsWith('/api/renewals')||
+    path.startsWith('/api/commissions')||
+    path.startsWith('/api/reports')||
+    path.startsWith('/api/notifications')||
     path.startsWith('/api/collections/route-plan');
 }
 

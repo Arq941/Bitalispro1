@@ -8,6 +8,7 @@ import {getAuthenticatedLandingRoute} from '@/lib/auth/landingRoute';
 import {apiClient} from '@/lib/phase15/apiClient';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 import {haptic} from '@/lib/ux/haptics';
+import {prepareOfflineData} from '@/lib/phase15/offlineWarmup';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
@@ -72,7 +73,7 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   try{
    const raw=localStorage.getItem('bitalis_auth_user');
    setUser(raw?JSON.parse(raw):null);
-   const cached=sessionStorage.getItem(permissionCacheKey);
+   const cached=localStorage.getItem(permissionCacheKey)||sessionStorage.getItem(permissionCacheKey);
    if(cached){const parsed=JSON.parse(cached);if(Array.isArray(parsed))setPermissions(prev=>samePermissions(prev,parsed.map(String))?prev:new Set(parsed.map(String)));}
   }catch{setUser(null);}
   setHydrated(true);
@@ -91,8 +92,9 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
     const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
     setPermissions(prev=>samePermissions(prev,codes)?prev:new Set(codes));
     sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
+    localStorage.setItem(permissionCacheKey,JSON.stringify(codes));
    }catch(error:any){
-    if(error?.status===401||error?.code==='SESSION_EXPIRED'){sessionStorage.removeItem(permissionCacheKey);return;}
+    if(error?.status===401||error?.code==='SESSION_EXPIRED'){sessionStorage.removeItem(permissionCacheKey);localStorage.removeItem(permissionCacheKey);return;}
    }
   };
   void refreshPermissions();
@@ -102,6 +104,12 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   window.addEventListener('bitalis:permissions-changed',onChanged);
   return()=>{window.removeEventListener('focus',onFocus);window.removeEventListener('bitalis:permissions-changed',onChanged);};
  },[hydrated,publicPath,user]);
+
+ useEffect(()=>{
+  if(!hydrated||publicPath||!user||!permissions||!navigator.onLine)return;
+  let stale=true;try{const ready=JSON.parse(localStorage.getItem('bitalis_offline_ready')||'{}');stale=ready.userId!==user.id||Date.now()-new Date(ready.at||0).getTime()>15*60*1000;}catch{}
+  if(stale)void prepareOfflineData(Array.from(permissions)).catch(()=>{});
+ },[hydrated,publicPath,user,permissions]);
 
  const role=(user?.role||'').toUpperCase();
  const fieldSeller=role==='VENDEDORA'||role==='VENDEDOR';
@@ -208,6 +216,7 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
    traceAuthTransition('logout-atomic-redirect');
    authKeys.forEach(key=>localStorage.removeItem(key));
    sessionStorage.removeItem(permissionCacheKey);
+   localStorage.removeItem(permissionCacheKey);
    window.location.replace('/');
   }
  };

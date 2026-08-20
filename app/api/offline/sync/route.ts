@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OfflineSyncService } from '@/src/offline/offline-sync.service';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await extractUserContext(req);
     const body = await req.json();
     const deviceId = body.deviceId || 'DEVICE-UNKNOWN';
-    const authUserId = req.headers.get('x-user-id') || body.userId || 'COBRADOR-RUTA-01';
+    const authUserId = user.userId;
 
     let operations = [];
     if (Array.isArray(body.operations)) {
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || 'Error durante la sincronización' },
-      { status: 500 }
+      { status: String(error?.message||'').includes('UNAUTHORIZED') ? 401 : String(error?.message||'').startsWith('FORBIDDEN:') ? 403 : 500 }
     );
   }
 }
