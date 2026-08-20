@@ -629,38 +629,35 @@ export class SalesService {
     const saleEnganche = new Decimal(downPaymentRecord?.amount || 0);
     const saleAporte =
       FinancialRulesService.calcularAporteEmpresa(saleEnganche);
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const itemSubtotal = new Decimal(item.subtotal || item.total);
-      let itemEnganche = new Decimal(0),
-        itemAporte = new Decimal(0);
-      if (saleSubtotal.greaterThan(0)) {
-        const ratio = itemSubtotal.div(saleSubtotal);
-        itemEnganche = saleEnganche.mul(ratio).toDecimalPlaces(2);
-        itemAporte = saleAporte.mul(ratio).toDecimalPlaces(2);
-      }
+    if (!items.length) throw new Error("La venta no tiene productos relacionados.");
+    // Un crédito consolidado por venta evita saldos parciales y cobros aplicados
+    // sólo a uno de varios productos. Los productos permanecen relacionados por SaleItem.
+    for (let i = 0; i < 1; i++) {
+      const itemSubtotal = saleSubtotal;
+      const itemEnganche = saleEnganche;
+      const itemAporte = saleAporte;
       const creditSaldo = FinancialRulesService.calcularSaldoFinanciado({
         precioLista: itemSubtotal,
         engancheCliente: itemEnganche,
         aporteEmpresa: itemAporte,
       }).saldoFinanciado;
-      const suggestedInstallment = creditSaldo
-        .div(installmentsCount)
-        .toDecimalPlaces(2);
       let minCuota = new Decimal(100);
       if (frequency === "BIWEEKLY") minCuota = new Decimal(200);
       if (frequency === "MONTHLY") minCuota = new Decimal(400);
-      if (suggestedInstallment.lessThan(minCuota))
-        throw new Error(
-          `La cuota sugerida ($${suggestedInstallment}) es menor a la cuota mínima permitida para frecuencia ${frequency} ($${minCuota}).`,
-        );
+      // Si la división solicitada baja del mínimo, reduce automáticamente el
+      // número de pagos en vez de bloquear la venta (ej. $99.33 → menos pagos).
+      const maxInstallmentsAtMinimum = Math.max(1, creditSaldo.div(minCuota).floor().toNumber());
+      const effectiveInstallmentsCount = Math.max(1, Math.min(installmentsCount, maxInstallmentsAtMinimum));
+      const suggestedInstallment = creditSaldo
+        .div(effectiveInstallmentsCount)
+        .toDecimalPlaces(2);
       const creditId = `cred_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 5)}`;
       const creditRecord = {
         id: creditId,
         saleId: dto.saleId,
         clientId: sale.clientId,
-        saleItemId: item.id,
-        productId: item.productId,
+        saleItemId: null,
+        productId: null,
         principalAmount: itemSubtotal,
         engancheCliente: itemEnganche,
         aporteEmpresa: itemAporte,
@@ -675,15 +672,15 @@ export class SalesService {
       let accumulated = new Decimal(0);
       let stepDays =
         frequency === "BIWEEKLY" ? 14 : frequency === "MONTHLY" ? 30 : 7;
-      for (let n = 1; n <= installmentsCount; n++) {
+      for (let n = 1; n <= effectiveInstallmentsCount; n++) {
         const schedDate = new Date(
           firstPaymentDate.getTime() + (n - 1) * stepDays * 86400000,
         );
         let amountForThisInstallment = creditSaldo
-          .div(installmentsCount)
+          .div(effectiveInstallmentsCount)
           .floor()
           .toDecimalPlaces(2);
-        if (n === installmentsCount)
+        if (n === effectiveInstallmentsCount)
           amountForThisInstallment = creditSaldo
             .minus(accumulated)
             .toDecimalPlaces(2);
@@ -778,11 +775,16 @@ export class SalesService {
         newValues: JSON.stringify({
           creditSaldo,
           frequency,
-          installmentsCount,
+          requestedInstallmentsCount: installmentsCount,
+          installmentsCount: effectiveInstallmentsCount,
         }),
         idempotencyKey: dto.idempotencyKey,
       });
     }
+    try {
+      const prisma = PrismaService.getInstance();
+      await prisma.client.update({ where: { id: sale.clientId }, data: { status: "ACTIVE", updatedAt: new Date() } });
+    } catch (error) { this.failClosedInProduction(error); }
     const response = {
       credits: createdCredits,
       schedules: allSchedules,
