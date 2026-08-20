@@ -179,7 +179,7 @@ export class ClientService {
 
     // Captura ciega: después de enviar el alta la vendedora no puede volver a
     // leer, buscar, editar ni enriquecer ningún expediente, incluso si lo creó.
-    if (context.role === "VENDEDORA") {
+    if (context.role === 'VENDEDORA') {
       return false;
     }
 

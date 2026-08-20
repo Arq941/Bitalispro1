@@ -387,9 +387,9 @@ export default function CompleteClientPage() {
             const g = geo.data || {};
             setAddress((v) => ({
               ...v,
-              street: g.street || v.street,
+              street:g.street || v.street,
               lot: g.exteriorNumber || v.lot,
-              neighborhood: g.neighborhood || v.neighborhood,
+              neighborhood:g.neighborhood || v.neighborhood,
               postalCode: g.postalCode || v.postalCode,
               city: g.city || v.city,
               municipality: g.municipality || v.municipality,
