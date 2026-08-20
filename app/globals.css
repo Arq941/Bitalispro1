@@ -48,7 +48,7 @@
 .bitalis-android-button-tonal{background:var(--bitalis-surface-soft);color:var(--bitalis-primary)}
 .bitalis-bottom-sheet{border-radius:28px 28px 0 0;background:#fff;box-shadow:0 -18px 40px rgba(6,43,36,.14)}
 .bitalis-bottom-sheet::before{content:"";display:block;width:40px;height:4px;margin:8px auto 10px;border-radius:999px;background:#CBD5D1}
-.bitalis-app-shell{background:var(--bitalis-bg);min-height:100vh!important;min-height:100svh!important}
+.bitalis-app-shell{width:100%;max-width:100%;overflow-x:clip;background:var(--bitalis-bg);min-height:100vh!important;min-height:100svh!important}
 .bitalis-loading-shimmer{background:#E7F0EB}
 @supports(padding:max(0px)){.bitalis-safe-bottom{padding-bottom:max(.75rem,env(safe-area-inset-bottom))}.bitalis-safe-top{padding-top:max(.25rem,env(safe-area-inset-top))}}
 
@@ -91,7 +91,21 @@ form .grid>*{min-width:0}
 }
 html{scroll-behavior:smooth;scroll-padding-top:calc(var(--bitalis-header-height) + env(safe-area-inset-top))}
 body{line-height:1.5}
-main{isolation:isolate}
+/* No aislar `main`: un stacking context aquí dejaba la navegación fija encima de
+   modales con z-index mayor y ocultaba sus acciones finales en Android. */
+main{min-width:0;max-width:100%}
+.bitalis-app-shell :where(section,article,form,fieldset){min-width:0;max-width:100%}
+.bitalis-app-shell :where(.grid)>*{min-width:0;max-width:100%}
+.bitalis-app-shell :where(button,a){min-width:0;overflow-wrap:anywhere}
+.bitalis-app-shell :where(img,video){max-width:100%;height:auto}
+
+/* Las capas de trabajo deben ocupar el viewport real y quedar sobre el menú. */
+.bitalis-app-shell > main .fixed.inset-0{max-width:100dvw;max-height:100dvh;overflow-x:hidden;overscroll-behavior:contain}
+.bitalis-app-shell > main .fixed.inset-0>section,
+.bitalis-app-shell > main .fixed.inset-0>div{max-width:100%;min-width:0}
+
+/* Acciones flotantes de páginas: nunca se colocan detrás de la navegación. */
+.bitalis-app-shell > main .fixed.inset-x-0[class*="bottom-"]{bottom:calc(var(--bitalis-nav-height) + env(safe-area-inset-bottom) + .5rem)!important;max-width:100dvw}
 h1,h2,h3{letter-spacing:-.018em;text-wrap:balance}
 p{overflow-wrap:break-word}
 button:disabled,[role="button"][aria-disabled="true"]{cursor:not-allowed;opacity:.55;transform:none!important}
