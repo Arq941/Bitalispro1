@@ -119,7 +119,61 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.collection.priorityScore - a.collection.priorityScore || Number(b.saldoActual) - Number(a.saldoActual));
     const todays = sorted
       .filter(c => c.collection.overdue || c.collection.dueToday || c.collection.preferredToday);
-    const data = scope === 'all' ? sorted : (todays.length ? todays : sorted);
+    let allClients: any[] = [];
+    if (scope === 'all') {
+      const activeClientIds = new Set(mapped.map(item => item.clientId));
+      const clientWhere: any = verified.role === 'COBRADOR' ? { assignedCollectorId: verified.sub } : {};
+      const clients = await prisma.client.findMany({
+        where: clientWhere,
+        select: {
+          id: true, clientNumber: true, firstName: true, lastName: true, secondLastName: true,
+          phone: true, latitude: true, longitude: true, riskLevel: true, status: true,
+          assignedCollectorId: true, profile: { select: { preferredCollectionDay: true } },
+        },
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      });
+      allClients = clients.filter(client => !activeClientIds.has(client.id)).map(client => ({
+        id: `client:${client.id}`,
+        saleId: null,
+        saleNumber: null,
+        clientId: client.id,
+        principalAmount: 0,
+        saldoActual: 0,
+        suggestedInstallment: 0,
+        paymentFrequency: null,
+        proximaVisita: null,
+        status: 'NO_ACTIVE_CREDIT',
+        hasActiveCredit: false,
+        client: {
+          ...client,
+          preferredCollectionDay: client.profile?.preferredCollectionDay || null,
+          profile: undefined,
+        },
+        collection: {
+          overdue: false,
+          dueToday: false,
+          preferredToday: false,
+          nextScheduledDate: null,
+          latestRescheduleDate: null,
+          priorityScore: 0,
+        },
+      }));
+    }
+    const activeByClient = new Map<string, any>();
+    for (const item of sorted) {
+      const current = activeByClient.get(item.clientId);
+      if (!current) {
+        activeByClient.set(item.clientId, { ...item, hasActiveCredit: true, activeCreditCount: 1, creditIds: [item.id] });
+      } else {
+        current.saldoActual += item.saldoActual;
+        current.principalAmount += item.principalAmount;
+        current.suggestedInstallment += item.suggestedInstallment;
+        current.activeCreditCount += 1;
+        current.creditIds.push(item.id);
+      }
+    }
+    const activeRows = Array.from(activeByClient.values());
+    const data = scope === 'all' ? [...activeRows, ...allClients] : (todays.length ? todays : sorted);
 
     return NextResponse.json({
       success: true,
@@ -127,6 +181,8 @@ export async function GET(req: NextRequest) {
       scope,
       mode: scope === 'all' ? 'FULL_PORTFOLIO' : todays.length ? 'DAILY_PRIORITY' : 'ACTIVE_FALLBACK',
       totalActive: mapped.length,
+      totalClients: scope === 'all' ? data.length : undefined,
+      totalWithoutActiveCredit: scope === 'all' ? allClients.length : undefined,
       totalToday: todays.length,
       data,
     });
