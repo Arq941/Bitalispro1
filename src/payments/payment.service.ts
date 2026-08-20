@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { PrismaService } from '@/src/database/prisma.service';
 import { FinancialRulesService } from '@/src/financial/financial-rules.service';
+import { PaymentCalendarService } from '@/src/financial/payment-calendar.service';
 
 export interface RegisterPaymentDto {
   creditId: string;
@@ -114,30 +115,23 @@ export class PaymentService {
       const paidBefore = credit.payments.filter(p=>p.verificationStatus==='VERIFIED').reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0));
       let remainingToAllocate = paymentType === 'DOWN_PAYMENT' ? new Decimal(0) : paidBefore.plus(amount);
       const pendingCount=credit.schedules.filter(schedule=>!['COMPLETED','CANCELLED'].includes(schedule.status)).length;
-      let recalculatedCount = pendingCount;
-      if (paymentType === 'DOWN_PAYMENT') {
-        const minimum = credit.paymentFrequency === 'MONTHLY'
-          ? new Decimal(400)
-          : credit.paymentFrequency === 'BIWEEKLY'
-            ? new Decimal(200)
-            : new Decimal(100);
-        recalculatedCount = newBalance.eq(0)
-          ? 0
-          : Math.max(1, Math.min(pendingCount, newBalance.div(minimum).floor().toNumber()));
-      }
-      let pendingIndex=0,pendingAllocated=new Decimal(0);
+      const recalculated = PaymentCalendarService.buildWholeAmounts({
+        balance: newBalance,
+        requestedInstallments: pendingCount,
+        frequency: credit.paymentFrequency,
+      });
+      let pendingIndex=0;
       if (!isBankTransfer) for (const schedule of credit.schedules) {
         if(paymentType==='DOWN_PAYMENT'&&!['COMPLETED','CANCELLED'].includes(schedule.status)){
           pendingIndex++;
-          if (pendingIndex > recalculatedCount) {
+          if (pendingIndex > recalculated.amounts.length) {
             await tx.paymentSchedule.update({
               where: { id: schedule.id },
               data: { status: 'CANCELLED', updatedAt: new Date() },
             });
             continue;
           }
-          const suggested=pendingIndex===recalculatedCount?newBalance.minus(pendingAllocated):newBalance.div(recalculatedCount).floor().toDecimalPlaces(2);
-          pendingAllocated=pendingAllocated.plus(suggested);
+          const suggested = recalculated.amounts[pendingIndex - 1];
           await tx.paymentSchedule.update({where:{id:schedule.id},data:{suggestedAmount:suggested,status:'PENDING',updatedAt:new Date()}});
           continue;
         }
@@ -161,9 +155,7 @@ export class PaymentService {
         await tx.credit.update({
           where: { id: dto.creditId },
           data: {
-            suggestedInstallment: recalculatedCount > 0
-              ? newBalance.div(recalculatedCount).toDecimalPlaces(2)
-              : new Decimal(0),
+            suggestedInstallment: recalculated.regularAmount,
             updatedAt: new Date(),
           },
         });
