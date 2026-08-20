@@ -42,6 +42,10 @@ export class PaymentService {
 
     const currentBalance = new Decimal(credit.saldoActual);
     const paymentType = dto.paymentType || 'REGULAR';
+    const isBankTransfer = (dto.paymentMethod || 'CASH') === 'BANK_TRANSFER';
+    if (paymentType === 'DOWN_PAYMENT' && isBankTransfer) {
+      throw new Error('El enganche por transferencia requiere verificación previa. Regístralo como abono o usa efectivo.');
+    }
     if (paymentType === 'DOWN_PAYMENT') {
       const [existingDownPayment,salePaymentCount] = await Promise.all([
         this.prisma.saleDownPayment.findUnique({ where: { saleId: credit.saleId } }),
@@ -74,7 +78,7 @@ export class PaymentService {
           cashSessionId: dto.cashSessionId || null,
           amount,
           paymentMethod: dto.paymentMethod || 'CASH',
-          verificationStatus: 'VERIFIED',
+          verificationStatus: isBankTransfer ? 'PENDING_VERIFICATION' : 'VERIFIED',
           idempotencyKey: dto.idempotencyKey,
           clientCapturedAt: dto.clientCapturedAt ? new Date(dto.clientCapturedAt) : new Date(),
           serverReceivedAt: new Date(),
@@ -82,13 +86,13 @@ export class PaymentService {
           gpsLongitude: dto.gpsLongitude ?? null,
           notes: dto.notes || null,
           paymentType,
-          verifiedBy: dto.collectorId,
-          verifiedAt: new Date(),
+          verifiedBy: isBankTransfer ? null : dto.collectorId,
+          verifiedAt: isBankTransfer ? null : new Date(),
         },
       });
 
       const newBalance = currentBalance.minus(totalBalanceReduction);
-      await tx.credit.update({
+      if (!isBankTransfer) await tx.credit.update({
         where: { id: dto.creditId },
         data: {
           saldoActual: newBalance,
@@ -99,7 +103,7 @@ export class PaymentService {
         },
       });
 
-      if (paymentType === 'DOWN_PAYMENT') {
+      if (!isBankTransfer && paymentType === 'DOWN_PAYMENT') {
         await tx.saleDownPayment.create({data:{saleId:credit.saleId,amount,paymentMethod:dto.paymentMethod||'CASH',status:'COMPLETED',paymentId:payment.id,createdBy:dto.collectorId}});
         await tx.companyContribution.create({data:{saleId:credit.saleId,amount:companyContribution,rule:'MATCH_DOWN_PAYMENT_UP_TO_200',percentageOrRatio:companyContribution.div(amount),createdBy:dto.collectorId}});
         const saleCredits=await tx.credit.findMany({where:{saleId:credit.saleId}});
@@ -107,14 +111,32 @@ export class PaymentService {
         await tx.sale.update({where:{id:credit.saleId},data:{totalDiscount:{increment:totalBalanceReduction},totalFinanced:financed,totalAmount:financed}});
       }
 
-      const paidBefore = credit.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0));
+      const paidBefore = credit.payments.filter(p=>p.verificationStatus==='VERIFIED').reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0));
       let remainingToAllocate = paymentType === 'DOWN_PAYMENT' ? new Decimal(0) : paidBefore.plus(amount);
       const pendingCount=credit.schedules.filter(schedule=>!['COMPLETED','CANCELLED'].includes(schedule.status)).length;
+      let recalculatedCount = pendingCount;
+      if (paymentType === 'DOWN_PAYMENT') {
+        const minimum = credit.paymentFrequency === 'MONTHLY'
+          ? new Decimal(400)
+          : credit.paymentFrequency === 'BIWEEKLY'
+            ? new Decimal(200)
+            : new Decimal(100);
+        recalculatedCount = newBalance.eq(0)
+          ? 0
+          : Math.max(1, Math.min(pendingCount, newBalance.div(minimum).floor().toNumber()));
+      }
       let pendingIndex=0,pendingAllocated=new Decimal(0);
-      for (const schedule of credit.schedules) {
+      if (!isBankTransfer) for (const schedule of credit.schedules) {
         if(paymentType==='DOWN_PAYMENT'&&!['COMPLETED','CANCELLED'].includes(schedule.status)){
           pendingIndex++;
-          const suggested=pendingIndex===pendingCount?newBalance.minus(pendingAllocated):newBalance.div(pendingCount).floor().toDecimalPlaces(2);
+          if (pendingIndex > recalculatedCount) {
+            await tx.paymentSchedule.update({
+              where: { id: schedule.id },
+              data: { status: 'CANCELLED', updatedAt: new Date() },
+            });
+            continue;
+          }
+          const suggested=pendingIndex===recalculatedCount?newBalance.minus(pendingAllocated):newBalance.div(recalculatedCount).floor().toDecimalPlaces(2);
           pendingAllocated=pendingAllocated.plus(suggested);
           await tx.paymentSchedule.update({where:{id:schedule.id},data:{suggestedAmount:suggested,status:'PENDING',updatedAt:new Date()}});
           continue;
@@ -135,8 +157,19 @@ export class PaymentService {
           });
         }
       }
+      if (!isBankTransfer && paymentType === 'DOWN_PAYMENT') {
+        await tx.credit.update({
+          where: { id: dto.creditId },
+          data: {
+            suggestedInstallment: recalculatedCount > 0
+              ? newBalance.div(recalculatedCount).toDecimalPlaces(2)
+              : new Decimal(0),
+            updatedAt: new Date(),
+          },
+        });
+      }
 
-      if (dto.cashSessionId && (dto.paymentMethod || 'CASH') === 'CASH') {
+      if (!isBankTransfer && dto.cashSessionId && (dto.paymentMethod || 'CASH') === 'CASH') {
         const session = await tx.cashSession.findUnique({ where: { id: dto.cashSessionId } });
         if (!session) throw new Error('Sesión de caja no encontrada durante el registro.');
 
@@ -176,7 +209,7 @@ export class PaymentService {
         orderBy: { updatedAt: 'desc' },
       });
 
-      if (collectionRule && paymentType !== 'DOWN_PAYMENT') {
+      if (!isBankTransfer && collectionRule && paymentType !== 'DOWN_PAYMENT') {
         const commissionAmount = amount.mul(new Decimal(collectionRule.rate));
         await tx.commission.create({
           data: {
@@ -199,14 +232,14 @@ export class PaymentService {
       await tx.auditLog.create({
         data: {
           userId: dto.collectorId,
-          action: paymentType === 'DOWN_PAYMENT' ? 'FIRST_COLLECTION_DOWN_PAYMENT_CREATED' : 'PAYMENT_CREATED',
+          action: isBankTransfer ? 'PAYMENT_PENDING_VERIFICATION' : paymentType === 'DOWN_PAYMENT' ? 'FIRST_COLLECTION_DOWN_PAYMENT_CREATED' : 'PAYMENT_CREATED',
           entity: 'Payment',
           entityId: payment.id,
           newValues: JSON.stringify({
             creditId: dto.creditId,
             amount: amount.toString(),
             previousBalance: currentBalance.toString(),
-            newBalance: newBalance.toString(),
+            newBalance: (isBankTransfer ? currentBalance : newBalance).toString(),
             companyContribution: companyContribution.toString(),
             paymentType,
           }),
@@ -215,6 +248,128 @@ export class PaymentService {
       });
 
       return payment;
+    });
+  }
+
+  static async verifyPayment(
+    paymentId: string,
+    action: 'VERIFY' | 'REJECT',
+    reviewerId: string,
+    notes?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          credit: {
+            include: {
+              schedules: { orderBy: { installmentNumber: 'asc' } },
+              payments: { where: { verificationStatus: 'VERIFIED' } },
+            },
+          },
+        },
+      });
+      if (!payment) throw new Error('Pago no encontrado.');
+      if (payment.verificationStatus !== 'PENDING_VERIFICATION') {
+        throw new Error(`El pago ya se encuentra en estado ${payment.verificationStatus}.`);
+      }
+      if (action === 'REJECT') {
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: {
+            verificationStatus: 'REJECTED',
+            verifiedBy: reviewerId,
+            verifiedAt: new Date(),
+            verificationNotes: notes || null,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            userId: reviewerId,
+            action: 'PAYMENT_REJECTED',
+            entity: 'Payment',
+            entityId: paymentId,
+            newValues: JSON.stringify({ notes: notes || null }),
+          },
+        });
+        return { success: true, paymentId, status: 'REJECTED' };
+      }
+
+      const current = new Decimal(payment.credit.saldoActual);
+      const amount = new Decimal(payment.amount);
+      if (amount.gt(current)) {
+        throw new Error('El saldo cambió y ya no permite aplicar esta transferencia.');
+      }
+      const next = current.minus(amount);
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          verificationStatus: 'VERIFIED',
+          verifiedBy: reviewerId,
+          verifiedAt: new Date(),
+          verificationNotes: notes || null,
+        },
+      });
+      await tx.credit.update({
+        where: { id: payment.creditId },
+        data: { saldoActual: next, status: next.eq(0) ? 'SETTLED' : 'ACTIVE' },
+      });
+
+      const verifiedTotal = payment.credit.payments
+        .reduce((sum, item) => sum.plus(new Decimal(item.amount)), new Decimal(0))
+        .plus(amount);
+      let remaining = verifiedTotal;
+      for (const schedule of payment.credit.schedules) {
+        const due = new Decimal(schedule.suggestedAmount);
+        let status: 'PENDING' | 'PARTIAL' | 'COMPLETED' = 'PENDING';
+        if (remaining.gte(due)) {
+          status = 'COMPLETED';
+          remaining = remaining.minus(due);
+        } else if (remaining.gt(0)) {
+          status = 'PARTIAL';
+          remaining = new Decimal(0);
+        }
+        await tx.paymentSchedule.update({
+          where: { id: schedule.id },
+          data: { status, updatedAt: new Date() },
+        });
+      }
+
+      const rule = await tx.commissionRule.findFirst({
+        where: { active: true, role: 'COBRADOR', ruleType: 'COLLECTION' },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (rule) {
+        await tx.commission.create({
+          data: {
+            employeeId: payment.collectorId,
+            role: 'COBRADOR',
+            commissionType: 'COLLECTION_COMMISSION',
+            paymentId: payment.id,
+            creditId: payment.creditId,
+            baseAmount: amount,
+            rate: rule.rate,
+            commissionAmount: amount.mul(new Decimal(rule.rate)),
+            status: 'CALCULATED',
+            sourceEvent: 'PAYMENT_VERIFIED',
+            idempotencyKey: `${payment.idempotencyKey}-commission`,
+            createdBy: reviewerId,
+          },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: reviewerId,
+          action: 'PAYMENT_VERIFIED',
+          entity: 'Payment',
+          entityId: paymentId,
+          newValues: JSON.stringify({
+            previousBalance: current.toString(),
+            newBalance: next.toString(),
+          }),
+        },
+      });
+      return { success: true, paymentId, status: 'VERIFIED', newSaldo: next.toNumber() };
     });
   }
 }
