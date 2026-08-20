@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "node scripts/write-build-version.js && node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma && next build && node scripts/finalize-standalone-assets.js",
+    "build": "node scripts/migrate-media-storage.js && node scripts/write-build-version.js && node scripts/prepare-mysql-schema.js && prisma generate --schema=prisma/schema.mysql.prisma && next build && node scripts/finalize-standalone-assets.js",
     "build:mysql": "npm run build",
     "start": "node .next/standalone/server.js",
     "lint": "tsc --noEmit",
