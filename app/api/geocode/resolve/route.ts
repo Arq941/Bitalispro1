@@ -38,6 +38,8 @@ function fromGoogleText(raw: string) {
   for (const pattern of [
     /@(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/,
     /[?&](?:q|query|destination|ll)=(-?\d{1,2}(?:\.\d+)?)[,%20 ]+(-?\d{1,3}(?:\.\d+)?)/i,
+    /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/i,
+    /\/place\/(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/i,
     /(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)/,
   ]) {
     const m = decoded.match(pattern);
@@ -104,6 +106,7 @@ async function reverse(latitude: number, longitude: number) {
       Accept: "application/json",
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) return {};
   const data: any = await response.json(),
@@ -133,7 +136,8 @@ export async function POST(req: NextRequest) {
   try {
     const user = await extractUserContext(req);
     await PermissionService.requirePermission(user.userId, "clients.edit");
-    const raw = String((await req.json())?.input || "").trim();
+    const body = await req.json();
+    const raw = String(body?.input || "").trim();
     if (!raw)
       return NextResponse.json(
         { success: false, error: "Pega un enlace, Plus Code o coordenadas." },
@@ -147,12 +151,15 @@ export async function POST(req: NextRequest) {
           { success: false, error: "Solo se aceptan enlaces de Google Maps." },
           { status: 400 },
         );
-      const response = await fetch(url, {
-        redirect: "follow",
-        cache: "no-store",
-      });
-      resolved =
-        fromGoogleText(response.url) || fromGoogleText(await response.text());
+      let current=url,response:Response|null=null;
+      for(let hop=0;hop<5&&!resolved;hop++){
+        response=await fetch(current,{redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(8000)});
+        const location=response.headers.get('location');
+        if(!location){resolved=fromGoogleText(response.url)||fromGoogleText(await response.text());break}
+        current=new URL(location,current);
+        if(!googleHosts.has(current.hostname))return NextResponse.json({success:false,error:'El enlace redirige fuera de Google Maps.'},{status:400});
+        resolved=fromGoogleText(current.toString());
+      }
     }
     if (!resolved)
       return NextResponse.json(
