@@ -22,7 +22,7 @@ function extensionFor(mimeType: string) {
 }
 
 export class ProductMediaStorageService {
-  static store(productId: string, buffer: Buffer, mimeType: string) {
+  static async store(productId: string, buffer: Buffer, mimeType: string) {
     if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType.toLowerCase())) {
       throw new Error('Formato de imagen no permitido. Usa JPG, PNG, WEBP o HEIC.');
     }
@@ -36,6 +36,7 @@ export class ProductMediaStorageService {
     const absolute = MediaStorageService.resolveStoragePath(storageKey);
     fs.mkdirSync(path.dirname(absolute), { recursive: true });
     fs.writeFileSync(absolute, buffer);
+    await MediaStorageService.persistDatabaseCopy(storageKey,mimeType.toLowerCase(),buffer,crypto.createHash('sha256').update(buffer).digest('hex'));
 
     return {
       storageKey,
@@ -45,7 +46,7 @@ export class ProductMediaStorageService {
     };
   }
 
-  static remove(storageKey?: string | null) {
+  static async remove(storageKey?: string | null) {
     if (!storageKey) return;
     try {
       const absolute = MediaStorageService.resolveStoragePath(storageKey);
@@ -53,6 +54,7 @@ export class ProductMediaStorageService {
     } catch {
       // Best effort cleanup only; DB operation remains authoritative.
     }
+    await MediaStorageService.remove(storageKey);
   }
 
   static contentTypeFor(storageKey: string) {

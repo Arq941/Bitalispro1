@@ -730,6 +730,8 @@ export class ClientService {
       fileSize: data.fileSize,
     });
 
+    await MediaStorageService.persistDatabaseCopy(processed.storageKey,processed.mimeType,data.fileContent,processed.checksum);
+
     const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const mediaObj = {
       id: mediaId,
@@ -886,6 +888,8 @@ export class ClientService {
       url: newData.url,
       fileContent: newData.fileContent,
     });
+
+    await MediaStorageService.persistDatabaseCopy(processed.storageKey,processed.mimeType,newData.fileContent,processed.checksum);
 
     const newMediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newMediaObj = {

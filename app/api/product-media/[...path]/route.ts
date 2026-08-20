@@ -1,4 +1,3 @@
-import fs from 'fs';
 import { NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { MediaStorageService } from '@/src/crm/media-storage.service';
@@ -12,13 +11,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
     const image = await prisma.productImage.findFirst({ where: { storageKey, status: 'ACTIVE' } });
     if (!image) return NextResponse.json({ error: 'Imagen no encontrada.' }, { status: 404 });
 
-    const absolute = MediaStorageService.resolveStoragePath(storageKey);
-    if (!fs.existsSync(absolute)) return NextResponse.json({ error: 'La imagen no está disponible.' }, { status: 404 });
+    const stored = await MediaStorageService.read(storageKey,ProductMediaStorageService.contentTypeFor(storageKey));
+    if (!stored) {
+      if (image.url && /^https:\/\//i.test(image.url)) return NextResponse.redirect(image.url);
+      return NextResponse.json({ error: 'La imagen no está disponible.' }, { status: 404 });
+    }
 
-    const bytes = fs.readFileSync(absolute);
-    return new NextResponse(bytes, {
+    const body=stored.content.buffer.slice(stored.content.byteOffset,stored.content.byteOffset+stored.content.byteLength) as ArrayBuffer;
+    return new NextResponse(body, {
       headers: {
-        'Content-Type': ProductMediaStorageService.contentTypeFor(storageKey),
+        'Content-Type': stored.mimeType || ProductMediaStorageService.contentTypeFor(storageKey),
         'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
         'X-Content-Type-Options': 'nosniff',
       },

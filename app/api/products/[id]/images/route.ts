@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!(value instanceof File)) throw new Error('Selecciona una imagen válida.');
       const mimeType = String(value.type || 'image/jpeg').toLowerCase();
       const buffer = Buffer.from(await value.arrayBuffer());
-      const stored = ProductMediaStorageService.store(product.id, buffer, mimeType);
+      const stored = await ProductMediaStorageService.store(product.id, buffer, mimeType);
       storedKey = stored.storageKey;
       storageKey = stored.storageKey;
       url = stored.url;
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ success: true, image }, { status: 201 });
   } catch (error: any) {
-    if (storedKey) ProductMediaStorageService.remove(storedKey);
+    if (storedKey) await ProductMediaStorageService.remove(storedKey);
     return NextResponse.json(
       { success: false, error: String(error?.message || 'No se pudo guardar la imagen.') },
       { status: statusFromError(error) }
