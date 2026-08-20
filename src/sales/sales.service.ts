@@ -614,23 +614,9 @@ export class SalesService {
     }
     const sale = await this.getSaleById(dto.saleId);
     if (!sale) throw new Error("Venta no encontrada.");
-    let hasValidDownPayment = false;
     let downPaymentRecord = await this.getDownPaymentBySaleId(dto.saleId);
-    if (
-      downPaymentRecord &&
-      (downPaymentRecord.status === "COMPLETED" ||
-        downPaymentRecord.status === "PENDING_VERIFICATION")
-    )
-      hasValidDownPayment = true;
-    else {
-      const exception = await this.getExceptionBySaleId(dto.saleId);
-      if (exception && exception.status === "APPROVED")
-        hasValidDownPayment = true;
-    }
-    if (!hasValidDownPayment)
-      throw new Error(
-        "No se puede crear el crédito: Se requiere enganche completado o excepción autorizada.",
-      );
+    // BITALIS permite iniciar una venta sin enganche. En ese caso el crédito se
+    // crea por el total y el primer cobro preguntará si se trata de enganche o abono.
     const frequency = dto.paymentFrequency || "WEEKLY";
     const installmentsCount = dto.installmentsCount || 10;
     const firstPaymentDate = dto.firstPaymentDate

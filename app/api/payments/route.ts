@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
       gpsLatitude: body.gpsLatitude,
       gpsLongitude: body.gpsLongitude,
       notes: body.notes,
+      paymentType: body.paymentType === 'DOWN_PAYMENT' ? 'DOWN_PAYMENT' : 'REGULAR',
       idempotencyKey: body.idempotencyKey,
     });
 

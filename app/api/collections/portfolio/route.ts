@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
             profile: { select: { preferredCollectionDay: true } },
           },
         },
-        sale: { select: { id: true, saleNumber: true } },
+        sale: { select: { id: true, saleNumber: true, downPayment: { select: { id: true } }, credits: { select: { payments: { select: { id: true }, take: 1 } } } } },
         reschedules: { orderBy: { createdAt: 'desc' }, take: 1 },
         schedules: {
           where: { status: { in: ['PENDING', 'PARTIAL'] } },
@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
         paymentFrequency: credit.paymentFrequency,
         proximaVisita: credit.proximaVisita,
         status: credit.status,
+        canChooseFirstPaymentType: !credit.sale?.downPayment && !credit.sale?.credits.some(item => item.payments.length > 0),
         client: {
           ...credit.client,
           preferredCollectionDay: credit.client.profile?.preferredCollectionDay || null,
