@@ -4,6 +4,7 @@ import { AuditLogService } from "@/src/audit/audit-log.service";
 import { IdempotencyService } from "@/src/idempotency/idempotency.service";
 import { InventoryService } from "@/src/inventory/inventory.service";
 import { FinancialRulesService } from "@/src/financial/financial-rules.service";
+import { PaymentCalendarService } from "@/src/financial/payment-calendar.service";
 
 export interface UserContext {
   userId: string;
@@ -641,16 +642,13 @@ export class SalesService {
         engancheCliente: itemEnganche,
         aporteEmpresa: itemAporte,
       }).saldoFinanciado;
-      let minCuota = new Decimal(100);
-      if (frequency === "BIWEEKLY") minCuota = new Decimal(200);
-      if (frequency === "MONTHLY") minCuota = new Decimal(400);
-      // Si la división solicitada baja del mínimo, reduce automáticamente el
-      // número de pagos en vez de bloquear la venta (ej. $99.33 → menos pagos).
-      const maxInstallmentsAtMinimum = Math.max(1, creditSaldo.div(minCuota).floor().toNumber());
-      const effectiveInstallmentsCount = Math.max(1, Math.min(installmentsCount, maxInstallmentsAtMinimum));
-      const suggestedInstallment = creditSaldo
-        .div(effectiveInstallmentsCount)
-        .toDecimalPlaces(2);
+      const calendar = PaymentCalendarService.buildWholeAmounts({
+        balance: creditSaldo,
+        requestedInstallments: installmentsCount,
+        frequency,
+      });
+      const effectiveInstallmentsCount = calendar.amounts.length;
+      const suggestedInstallment = calendar.regularAmount;
       const creditId = `cred_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 5)}`;
       const creditRecord = {
         id: creditId,
@@ -669,22 +667,13 @@ export class SalesService {
         updatedAt: new Date(),
       };
       const creditSchedules: any[] = [];
-      let accumulated = new Decimal(0);
       let stepDays =
         frequency === "BIWEEKLY" ? 14 : frequency === "MONTHLY" ? 30 : 7;
       for (let n = 1; n <= effectiveInstallmentsCount; n++) {
         const schedDate = new Date(
           firstPaymentDate.getTime() + (n - 1) * stepDays * 86400000,
         );
-        let amountForThisInstallment = creditSaldo
-          .div(effectiveInstallmentsCount)
-          .floor()
-          .toDecimalPlaces(2);
-        if (n === effectiveInstallmentsCount)
-          amountForThisInstallment = creditSaldo
-            .minus(accumulated)
-            .toDecimalPlaces(2);
-        else accumulated = accumulated.plus(amountForThisInstallment);
+        const amountForThisInstallment = calendar.amounts[n - 1];
         const scheduleItem = {
           id: `sched_${Date.now()}_${n}_${Math.random().toString(36).substring(2, 5)}`,
           creditId,
@@ -967,7 +956,7 @@ export class SalesService {
         where: { id: saleId },
         include: {
           items: { include: { product: true } },
-          client: true,
+          client: { include: { profile: true } },
           seller: true,
           credits: { include: { schedules: true } },
           downPayment: true,

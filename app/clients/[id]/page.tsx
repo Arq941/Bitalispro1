@@ -66,7 +66,7 @@ export default function Client360Page() {
   const primaryAddress = (c.addresses || data?.addresses || [])[0] || {};
   const credits = data?.credits || c?.credits || [],
     payments = credits.flatMap((credit: any) =>
-      (credit.payments || []).map((payment: any) => ({
+      (credit.payments || []).filter((payment:any)=>payment.verificationStatus==='VERIFIED').map((payment: any) => ({
         ...payment,
         _credit: credit,
       })),
@@ -75,6 +75,9 @@ export default function Client360Page() {
     visits = data?.collectionVisits || data?.visits || [],
     timeline = data?.timeline || [],
     media = data?.media || c?.media || [];
+  const activeSchedules = credits.flatMap((credit:any)=>(credit.schedules||[])
+    .filter((schedule:any)=>!['COMPLETED','CANCELLED'].includes(String(schedule.status)))
+    .map((schedule:any)=>({...schedule,_credit:credit})));
   const totalBalance = useMemo(
     () =>
       credits.reduce(
@@ -87,28 +90,28 @@ export default function Client360Page() {
     () => payments.reduce((s: number, x: any) => s + Number(x.amount ?? 0), 0),
     [payments],
   );
-  const overdue = useMemo(
-    () =>
-      credits.reduce(
-        (s: number, x: any) => s + Number(x.overdueAmount ?? x.vencido ?? 0),
-        0,
-      ),
-    [credits],
-  );
-  const nextPayment = credits
-    .map((x: any) => ({
-      amount: Number(
-        x.installmentAmount ?? x.weeklyPayment ?? x.nextPaymentAmount ?? 0,
-      ),
-      date: x.nextPaymentDate || x.nextDueDate,
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  const overdue = Math.min(totalBalance, activeSchedules
+    .filter((schedule:any)=>schedule.scheduledDate&&new Date(schedule.scheduledDate)<todayStart)
+    .reduce((sum:number,schedule:any)=>sum+Number(schedule.suggestedAmount||0),0));
+  const nextPayment = activeSchedules
+    .map((schedule: any) => ({
+      amount: Number(schedule.suggestedAmount || schedule._credit?.suggestedInstallment || 0),
+      date: schedule.scheduledDate,
     }))
-    .filter((x: any) => x.date)
+    .filter((item: any) => item.date)
     .sort((a: any, b: any) => +new Date(a.date) - +new Date(b.date))[0];
   const lastPayment = [...payments].sort(
     (a: any, b: any) =>
       +new Date(b.clientCapturedAt || b.createdAt) -
       +new Date(a.clientCapturedAt || a.createdAt),
   )[0];
+  const collectionDay = c.profile?.preferredCollectionDay || (nextPayment?.date
+    ? ['DOMINGO','LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'][new Date(nextPayment.date).getUTCDay()]
+    : null);
+  const totalSalePrice = purchases.reduce((sum:number,sale:any)=>sum+Number(sale.totalListPrice||sale.subtotal||sale.totalAmount||0),0);
+  const totalDiscount = purchases.reduce((sum:number,sale:any)=>sum+Number(sale.totalDiscount||0),0);
   const risk = String(c.riskLevel || "LOW").toUpperCase();
   const riskLabel =
     risk === "CRITICAL"
@@ -338,7 +341,7 @@ export default function Client360Page() {
                 <Finance label="Total pagado" value={money.format(totalPaid)} />
                 <Finance
                   label="Día de cobro"
-                  value={c.profile?.preferredCollectionDay || "Sin definir"}
+                  value={collectionDay || "Sin definir"}
                 />
                 <Finance
                   label="Último pago"
@@ -405,7 +408,7 @@ export default function Client360Page() {
                   />
                   <Info
                     label="Día de cobro"
-                    value={c.profile?.preferredCollectionDay}
+                    value={collectionDay}
                   />
                   <Info
                     label="Coordenadas"
@@ -427,6 +430,14 @@ export default function Client360Page() {
               )}
               {tab === "Financiero" && (
                 <div className="space-y-2">
+                  <FinanceRow
+                    label="Precio lista de ventas"
+                    value={money.format(totalSalePrice)}
+                  />
+                  <FinanceRow
+                    label="Descuentos y aportes"
+                    value={money.format(totalDiscount)}
+                  />
                   <FinanceRow
                     label="Saldo actual"
                     value={money.format(totalBalance)}
