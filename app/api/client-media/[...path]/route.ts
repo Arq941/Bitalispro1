@@ -17,7 +17,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       if (media.url && /^https:\/\//i.test(media.url)) return NextResponse.redirect(media.url);
       return NextResponse.json({ error: 'El archivo de evidencia no está disponible.' }, { status: 404 });
     }
-    return new NextResponse(stored.content, { headers: { 'Content-Type': stored.mimeType || media.mimeType || 'image/jpeg', 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
+    const body=stored.content.buffer.slice(stored.content.byteOffset,stored.content.byteOffset+stored.content.byteLength) as ArrayBuffer;
+    return new NextResponse(body, { headers: { 'Content-Type': stored.mimeType || media.mimeType || 'image/jpeg', 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' } });
   } catch (err: any) {
     const message = String(err?.message || 'No pudimos abrir la evidencia.');
     return NextResponse.json({ error: message }, { status: message.includes('UNAUTHORIZED') ? 401 : 500 });
