@@ -47,21 +47,21 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
       {pathname === '/route' && <ReceiptFlowEnhancer />}
 
       {pathname === '/route' && routeFinished ? (
-        <div className="fixed inset-x-0 bottom-0 z-[90] border-t border-emerald-400/20 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
-          <div className="mx-auto flex max-w-5xl flex-col gap-3 rounded-[22px] border border-emerald-400/15 bg-gradient-to-r from-slate-900 to-emerald-950/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="fixed inset-x-0 bottom-0 z-[90] border-t border-[#70E5A6]/20 bg-[#062B24]/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:p-4">
+          <div className="mx-auto flex max-w-5xl flex-col gap-3 rounded-[22px] border border-[#70E5A6]/15 bg-gradient-to-r from-[#0B3D33] to-[#062B24] p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950"><Flag className="h-5 w-5" /></div>
-              <div><div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" /> Ruta terminada</div><p className="mt-1 text-sm font-black text-white">Finaliza la jornada y realiza el arqueo</p><p className="mt-1 text-[11px] leading-5 text-slate-500">Cuenta el efectivo, compara contra la caja esperada y registra el cierre con GPS.</p></div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#11A65A] text-[#062B24]"><Flag className="h-5 w-5" /></div>
+              <div><div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.14em] text-[#70E5A6]"><ShieldCheck className="h-3.5 w-3.5" /> Ruta terminada</div><p className="mt-1 text-sm font-black text-white">Finaliza la jornada y realiza el arqueo</p><p className="mt-1 text-[11px] leading-5 text-emerald-100/55">Cuenta el efectivo, compara contra la caja esperada y registra el cierre con GPS.</p></div>
             </div>
-            <button onClick={() => router.push('/route/close')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400"><ClipboardCheck className="h-5 w-5" /> Finalizar ruta y hacer arqueo</button>
+            <button onClick={() => router.push('/route/close')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#11A65A] px-5 py-3 text-sm font-black text-[#062B24] transition hover:bg-[#70E5A6]"><ClipboardCheck className="h-5 w-5" /> Finalizar ruta y hacer arqueo</button>
           </div>
         </div>
       ) : (
-        <nav className="bitalis-safe-bottom fixed bottom-2 left-1/2 z-[80] w-[calc(100%-16px)] max-w-lg -translate-x-1/2 rounded-[22px] border border-white/10 bg-slate-950/96 p-1.5 shadow-2xl shadow-black/35 backdrop-blur-xl print:hidden" aria-label="Navegación de ruta">
+        <nav className="bitalis-safe-bottom fixed bottom-2 left-1/2 z-[80] w-[calc(100%-16px)] max-w-lg -translate-x-1/2 rounded-[22px] border border-white/10 bg-[#062B24]/96 p-1.5 shadow-2xl shadow-black/35 backdrop-blur-xl print:hidden" aria-label="Navegación de ruta">
           <div className="grid grid-cols-4 gap-1">
             {nav.map(({ href, label, icon: Icon }) => {
               const active = href === '/route' ? pathname === '/route' : pathname.startsWith(href);
-              return <button key={href} type="button" onClick={() => router.push(href)} aria-current={active ? 'page' : undefined} className={`min-w-0 rounded-2xl px-1 py-2 transition active:scale-95 ${active ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-950/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} flex min-h-14 flex-col items-center justify-center gap-1`}><Icon className="h-5 w-5 shrink-0" /><span className="w-full truncate text-center text-[9px] font-black leading-none sm:text-[10px]">{label}</span></button>;
+              return <button key={href} type="button" onClick={() => router.push(href)} aria-current={active ? 'page' : undefined} className={`min-w-0 rounded-2xl px-1 py-2 transition active:scale-95 ${active ? 'bg-[#11A65A] text-[#062B24] shadow-lg shadow-emerald-950/20' : 'text-emerald-100/75 hover:bg-[#0B3D33] hover:text-white'} flex min-h-14 flex-col items-center justify-center gap-1`}><Icon className="h-5 w-5 shrink-0" /><span className="w-full truncate text-center text-[9px] font-black leading-none sm:text-[10px]">{label}</span></button>;
             })}
           </div>
         </nav>

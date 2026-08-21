@@ -24,7 +24,7 @@ export default function ReceiptFlowEnhancer(){
       const nextButton=document.createElement('button');
       nextButton.type='button';
       nextButton.setAttribute('data-bitalis-next-client','true');
-      nextButton.className='col-span-2 mt-1 min-h-14 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950';
+      nextButton.className='col-span-2 mt-1 min-h-14 rounded-xl bg-[#11A65A] px-4 py-3 text-sm font-black text-[#062B24]';
       nextButton.textContent='SIGUIENTE CLIENTE →';
       nextButton.onclick=()=>{
         continueButton.click();
