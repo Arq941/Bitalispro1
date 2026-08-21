@@ -1,6 +1,6 @@
 'use client';
 
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,CheckCircle2,Loader2,Minus,Package,Plus,ShieldAlert,ShoppingCart,Trash2,UserRound} from 'lucide-react';
 import {useRouter} from 'next/navigation';
 import AppShell from '@/components/phase15/AppShell';
@@ -23,6 +23,7 @@ function dateAfter(days:number){const date=new Date();date.setDate(date.getDate(
 
 export default function NewSalePage(){
  const router=useRouter();
+ const submittingRef=useRef(false),saleAttemptKeyRef=useRef('');
  const[clients,setClients]=useState<Client[]>([]),[products,setProducts]=useState<Product[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[clientId,setClientId]=useState(''),[items,setItems]=useState<SaleItem[]>([]),[saleType,setSaleType]=useState<'CASH'|'CREDIT'>('CREDIT'),[down,setDown]=useState(''),[weekly,setWeekly]=useState('100'),[firstPaymentDate,setFirstPaymentDate]=useState(dateAfter(7)),[result,setResult]=useState<any>(null),[role,setRole]=useState('');
 
  useEffect(()=>{
@@ -64,20 +65,24 @@ export default function NewSalePage(){
  const setProposed=(id:string,value:string)=>setItems(prev=>prev.map(x=>x.productId===id?{...x,proposed:value}:x));
 
  const submit=async()=>{
+   if(submittingRef.current||saving)return;
+   submittingRef.current=true;
    haptic('tap');
-   if(!clientId||!detailed.length){setError('Selecciona cliente y al menos un producto.');return;}
-   if(detailed.some(i=>!i.product||i.price<=0)){setError('Revisa los productos y precios.');return;}
-   if(saleType==='CREDIT'&&commercialDiscount>totalProposed){setError('El enganche y aporte empresa no pueden superar el precio acordado.');return;}
-   if(saleType==='CREDIT'&&!firstPaymentDate){setError('Selecciona la primera fecha de abono.');return;}
-   if(requiresAuth&&role!=='SUPERVISORA'&&role!=='ADMIN'&&!confirm('Esta venta requiere autorización de supervisión. ¿Continuar?'))return;
+   if(!clientId||!detailed.length){setError('Selecciona cliente y al menos un producto.');submittingRef.current=false;return;}
+   if(detailed.some(i=>!i.product||i.price<=0)){setError('Revisa los productos y precios.');submittingRef.current=false;return;}
+   if(saleType==='CREDIT'&&commercialDiscount>totalProposed){setError('El enganche y aporte empresa no pueden superar el precio acordado.');submittingRef.current=false;return;}
+   if(saleType==='CREDIT'&&!firstPaymentDate){setError('Selecciona la primera fecha de abono.');submittingRef.current=false;return;}
+   if(requiresAuth&&role!=='SUPERVISORA'&&role!=='ADMIN'&&!confirm('Esta venta requiere autorización de supervisión. ¿Continuar?')){submittingRef.current=false;return;}
    setSaving(true);setError('');
-   const key=newIdempotencyKey('sale');
+   const key=saleAttemptKeyRef.current||newIdempotencyKey('sale');
+   saleAttemptKeyRef.current=key;
    try{
      const j:any=await apiClient('/api/sales',{method:'POST',idempotencyKey:key,body:JSON.stringify({clientId,saleType,items:detailed.map(i=>({productId:i.product!.id,quantity:i.qty,unitPrice:i.list||i.price,negotiatedPrice:i.price,minimumAuthorizedPrice:i.min||i.price})),engancheCliente:enganche,paymentFrequency:'WEEKLY',installmentsCount:Math.max(1,estimatedWeeks),firstPaymentDate:`${firstPaymentDate}T12:00:00`,idempotencyKey:key})});
      if(saleType==='CREDIT'&&j?.status!=='PENDING_AUTHORIZATION'){await apiClient(`/api/sales/${j.id}/credit`,{method:'POST',idempotencyKey:`${key}-credit`,body:JSON.stringify({paymentFrequency:'WEEKLY',installmentsCount:Math.max(1,estimatedWeeks),firstPaymentDate:`${firstPaymentDate}T12:00:00`,idempotencyKey:`${key}-credit`})});j.firstPaymentDate=firstPaymentDate;}
      haptic('success');
      setResult(j);
-   }catch(e:any){haptic('error');setError(e.message);}finally{setSaving(false);}
+     saleAttemptKeyRef.current='';
+   }catch(e:any){haptic('error');setError(e.message);}finally{setSaving(false);submittingRef.current=false;}
  };
 
  return <AppShell title="Nueva venta"><main className="mx-auto max-w-4xl px-3 pb-36 pt-4 sm:px-4 sm:pb-8 sm:pt-5">
