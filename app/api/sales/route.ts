@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
     const userContext = getSalesUserContext(req);
     await PermissionService.requirePermission(userContext.userId, 'sales.create');
     const body = await req.json();
+    const headerKey = req.headers.get('idempotency-key')?.trim();
+    const bodyKey = String(body?.idempotencyKey || '').trim();
+    if (!headerKey || !bodyKey) throw new Error('Se requiere una clave de idempotencia para crear la venta.');
+    if (headerKey !== bodyKey) throw new Error('La clave de idempotencia no coincide con la solicitud.');
 
     const result = await SalesService.createSale(body, userContext);
 

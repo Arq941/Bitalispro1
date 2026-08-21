@@ -127,6 +127,15 @@ export class SalesService {
 
   public static async createSale(dto: CreateSaleDto, userContext: UserContext) {
     if (dto.idempotencyKey) {
+      try {
+        const persisted = await PrismaService.getInstance().sale.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+          include: { items: true, client: true },
+        });
+        if (persisted) return persisted;
+      } catch (error) {
+        this.failClosedInProduction(error);
+      }
       const cached = await IdempotencyService.check(
         dto.idempotencyKey,
         "/api/sales",
@@ -275,7 +284,14 @@ export class SalesService {
                 : reason,
             },
           });
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.code === "P2002" && dto.idempotencyKey) {
+        const persisted = await PrismaService.getInstance().sale.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+          include: { items: true, client: true },
+        });
+        if (persisted) return persisted;
+      }
       this.failClosedInProduction(error);
       SalesStore.sales.set(saleRecord.id, saleRecord);
       for (const item of itemsData) SalesStore.saleItems.set(item.id, item);
