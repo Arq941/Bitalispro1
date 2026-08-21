@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AlertTriangle, ArrowLeft, Banknote, CheckCircle2, CircleDollarSign,
-  ClipboardCheck, Loader2, MapPin, ReceiptText, RefreshCw, ShieldAlert,
+  AlertTriangle, Banknote, CheckCircle2, CircleDollarSign,
+  ClipboardCheck, Loader2, MapPin, ReceiptText, ShieldAlert,
   ShieldCheck, WalletCards
 } from 'lucide-react';
-import BitalisLogo from '@/components/BitalisLogo';
 import { apiClient } from '@/lib/phase15/apiClient';
 
 type AuthUser = { id: string; email: string; firstName?: string; lastName?: string; role: string };
@@ -119,14 +118,7 @@ export default function CloseRoutePage() {
   };
 
   return <div className="min-h-screen bg-slate-950 text-slate-100">
-    <header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/90 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3"><button onClick={() => router.push('/route')} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 active:scale-95" aria-label="Volver a Ruta"><ArrowLeft className="h-5 w-5"/></button><BitalisLogo size="md" variant="dark"/></div>
-        <button onClick={load} disabled={loading} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 active:scale-95 disabled:opacity-50" aria-label="Actualizar caja"><RefreshCw className={`h-5 w-5 ${loading?'animate-spin':''}`}/></button>
-      </div>
-    </header>
-
-    <main className="mx-auto max-w-5xl px-4 py-6">
+    <main className="mx-auto max-w-5xl px-3 pb-28 pt-3 sm:px-4 sm:pt-5">
       <section className="rounded-[28px] border border-emerald-400/10 bg-gradient-to-br from-slate-900 to-emerald-950/20 p-5 sm:p-7">
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.16em] text-emerald-300"><ClipboardCheck className="h-3.5 w-3.5"/> Cierre de jornada</div>
         <h1 className="mt-4 text-2xl font-black text-white">Arqueo y cierre del cobrador</h1>

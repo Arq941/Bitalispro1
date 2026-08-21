@@ -57,11 +57,11 @@ export default function RouteLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : (
-        <nav className="fixed bottom-2 left-1/2 z-[80] w-[calc(100%-16px)] max-w-lg -translate-x-1/2 rounded-[18px] border border-white/10 bg-slate-950/96 p-1 shadow-2xl shadow-black/35 backdrop-blur-xl print:hidden" aria-label="Navegación de ruta">
+        <nav className="bitalis-safe-bottom fixed bottom-2 left-1/2 z-[80] w-[calc(100%-16px)] max-w-lg -translate-x-1/2 rounded-[22px] border border-white/10 bg-slate-950/96 p-1.5 shadow-2xl shadow-black/35 backdrop-blur-xl print:hidden" aria-label="Navegación de ruta">
           <div className="grid grid-cols-4 gap-1">
             {nav.map(({ href, label, icon: Icon }) => {
               const active = href === '/route' ? pathname === '/route' : pathname.startsWith(href);
-              return <button key={href} type="button" onClick={() => router.push(href)} aria-current={active ? 'page' : undefined} className={`min-w-0 rounded-xl px-1 py-2 transition ${active ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} flex min-h-12 flex-col items-center justify-center gap-1`}><Icon className="h-4 w-4 shrink-0" /><span className="w-full truncate text-center text-[9px] font-black leading-none sm:text-[10px]">{label}</span></button>;
+              return <button key={href} type="button" onClick={() => router.push(href)} aria-current={active ? 'page' : undefined} className={`min-w-0 rounded-2xl px-1 py-2 transition active:scale-95 ${active ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-950/20' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} flex min-h-14 flex-col items-center justify-center gap-1`}><Icon className="h-5 w-5 shrink-0" /><span className="w-full truncate text-center text-[9px] font-black leading-none sm:text-[10px]">{label}</span></button>;
             })}
           </div>
         </nav>
