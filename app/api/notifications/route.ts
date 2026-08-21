@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   try {
     const userContext = await extractUserContext(req);
     await NotificationService.ensureOperationalNotices(userContext);
-    const notifications = await NotificationService.getUserNotifications(userContext.userId, undefined, userContext);
+    const notifications = await NotificationService.getUserNotifications(userContext.userId, 'UNREAD', userContext);
     return NextResponse.json({ success: true, data: notifications });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 400 });
