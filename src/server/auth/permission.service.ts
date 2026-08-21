@@ -189,6 +189,25 @@ export class PermissionService {
     });
   }
 
+  public static async clearUserOverrides(userId: string) {
+    await this.ensureOverrideTable();
+    if (this.isMySql()) {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM user_permission_overrides WHERE user_id = ?`,
+        userId
+      );
+    } else {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM user_permission_overrides WHERE user_id = $1`,
+        userId
+      );
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { permissionVersion: { increment: 1 } },
+    });
+  }
+
   private static async getPermissionContext(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
