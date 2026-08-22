@@ -18,7 +18,11 @@ export interface PasswordSetupPayload extends JwtPayload {
 
 export class SecurityService {
   private static getJwtSecret(): string {
-    return process.env.JWT_SECRET || 'bitalis_super_secret_jwt_key_360_prod_998234';
+    const secret = process.env.JWT_SECRET?.trim();
+    if (!secret || secret.length < 32) {
+      throw new Error('SECURITY_CONFIGURATION_ERROR: JWT_SECRET debe existir y tener al menos 32 caracteres.');
+    }
+    return secret;
   }
 
   private static getBcryptRounds(): number {

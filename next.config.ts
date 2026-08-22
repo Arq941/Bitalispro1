@@ -38,6 +38,19 @@ const nextConfig: NextConfig = {
   },
   async headers(){
     return [
+      {
+        source:'/:path*',
+        headers:[
+          {key:'X-Content-Type-Options',value:'nosniff'},
+          {key:'X-Frame-Options',value:'DENY'},
+          {key:'Referrer-Policy',value:'strict-origin-when-cross-origin'},
+          {key:'Permissions-Policy',value:'camera=(self), geolocation=(self), microphone=()'},
+          {key:'Cross-Origin-Opener-Policy',value:'same-origin'},
+          {key:'Cross-Origin-Resource-Policy',value:'same-origin'},
+          {key:'Strict-Transport-Security',value:'max-age=31536000; includeSubDomains'},
+          {key:'Content-Security-Policy',value:"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https://picsum.photos; style-src 'self' 'unsafe-inline' https://unpkg.com https://api.mapbox.com; script-src 'self' 'unsafe-inline'; connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://router.project-osrm.org; worker-src 'self' blob:; manifest-src 'self'"},
+        ],
+      },
       ...freshEntryDocuments.map(source=>({source,headers:noDocumentCache})),
       // El marcador de versión es la autoridad para comprobar coherencia del bundle.
       {source:'/build-version.txt',headers:noDocumentCache},

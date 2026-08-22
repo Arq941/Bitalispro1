@@ -17,7 +17,9 @@ export async function POST(req: NextRequest) {
     }
 
     const success = AuthService.logout(decoded.sessionId, decoded.sub);
-    return NextResponse.json({ success, message: 'Sesión cerrada correctamente.' });
+    const response=NextResponse.json({ success, message: 'Sesión cerrada correctamente.' });
+    response.cookies.set('bitalis_refresh_token','',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api/auth',maxAge:0});
+    return response;
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error?.message || 'Error en logout' }, { status: 500 });
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConflictResolverService } from '@/src/offline/conflict-resolver.service';
+import { requireTrustedRole } from '@/src/server/auth/request-context';
 
 export async function POST(
   req: NextRequest,
@@ -7,8 +8,8 @@ export async function POST(
 ) {
   try {
     const resolvedParams = await params;
+    const supervisor = requireTrustedRole(req,['ADMIN','SUPERVISORA']);
     const body = await req.json();
-    const supervisorId = req.headers.get('x-user-id') || body.userId || 'SUPERVISORA-01';
 
     if (!body.resolution || !['FORCE_SYNC', 'REJECT', 'REVIEW'].includes(body.resolution)) {
       return NextResponse.json(
@@ -19,7 +20,7 @@ export async function POST(
 
     const resolved = await ConflictResolverService.resolveConflict({
       conflictId: resolvedParams.id,
-      supervisorId,
+      supervisorId: supervisor.userId,
       resolution: body.resolution,
       notes: body.notes || body.resolutionNotes,
       ipAddress: req.headers.get('x-forwarded-for') || '127.0.0.1',
@@ -34,7 +35,7 @@ export async function POST(
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
-      { status: 500 }
+      { status: String(error?.message||'').startsWith('UNAUTHORIZED')?401:String(error?.message||'').startsWith('FORBIDDEN')?403:500 }
     );
   }
 }
