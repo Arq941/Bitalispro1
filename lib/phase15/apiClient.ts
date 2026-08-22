@@ -27,17 +27,13 @@ function dispatchSessionExpiredOnce(){
 }
 async function refreshAccessTokenOnce(){
   if(typeof window==='undefined')return false;
-  const refreshToken=localStorage.getItem('bitalis_refresh_token');
-  if(!refreshToken)return false;
   try{
-    const res=await fetch('/api/auth/refresh',{method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({refreshToken}),cache:'no-store'});
+    const res=await fetch('/api/auth/refresh',{method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:'{}',credentials:'same-origin',cache:'no-store'});
     const body=await res.json().catch(()=>({}));
     if(!res.ok)return false;
     const next=body?.accessToken||body?.access_token||body?.tokens?.accessToken;
-    const nextRefresh=body?.refreshToken||body?.refresh_token||body?.tokens?.refreshToken;
     if(!next)return false;
     localStorage.setItem('bitalis_access_token',next);
-    if(nextRefresh)localStorage.setItem('bitalis_refresh_token',nextRefresh);
     sessionExpiredDispatched=false;
     return true;
   }catch{return false;}

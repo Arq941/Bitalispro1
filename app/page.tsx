@@ -138,12 +138,10 @@ export default function ProductionLoginPage() {
       if (!response.ok) throw new Error(json?.error || json?.message || 'Credenciales inválidas o cuenta inaccesible.');
 
       const accessToken = json?.accessToken || json?.access_token || json?.tokens?.accessToken;
-      const refreshToken = json?.refreshToken || json?.refresh_token || json?.tokens?.refreshToken;
       const user = json?.user as SessionUser|undefined;
       if (!accessToken || !user) throw new Error('No pudimos iniciar la sesión. Intenta nuevamente.');
 
       localStorage.setItem('bitalis_access_token', accessToken);
-      if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
       const permissionCodes=await primeAuthenticatedApp();

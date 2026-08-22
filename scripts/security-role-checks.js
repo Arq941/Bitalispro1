@@ -26,6 +26,27 @@ const inventoryService = read('src/inventory/inventory.service.ts');
 const routePlan = read('app/api/collections/route-plan/route.ts');
 const routePage = read('app/route/page.tsx');
 const collectionVisits = read('app/api/collections/visits/route.ts');
+const middleware = read('middleware.ts');
+const securityService = read('src/server/auth/security.service.ts');
+const refundRoute = read('app/api/cash-sessions/[id]/refunds/route.ts');
+const conflictResolution = read('app/api/offline/conflicts/[id]/resolve/route.ts');
+const nextConfig = read('next.config.ts');
+
+assert(!securityService.includes('bitalis_super_secret_jwt_key'),
+  'JWT signing must never fall back to a repository secret');
+assert(securityService.includes('JWT_SECRET debe existir'),
+  'missing JWT_SECRET must fail closed');
+assert(middleware.includes("matcher:['/api/:path*']") && middleware.includes("crypto.subtle.verify('HMAC'"),
+  'every API route must pass the central cryptographic authentication gate');
+assert(middleware.includes('SUPERVISION_PREFIXES') && middleware.includes('ADMIN_ONLY_PREFIXES'),
+  'legacy APIs must be protected centrally by role');
+assert(refundRoute.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && refundRoute.includes('authorizedBy: supervisor.userId'),
+  'refunds must use the authenticated supervisor identity');
+assert(conflictResolution.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && conflictResolution.includes('supervisorId: supervisor.userId'),
+  'offline conflicts must not trust client-supplied supervisor identifiers');
+for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
+  assert(nextConfig.includes(header),'global security headers must include '+header);
+}
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');

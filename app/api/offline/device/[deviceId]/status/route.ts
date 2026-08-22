@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/src/database/prisma.service';
+import { getTrustedRequestContext } from '@/src/server/auth/request-context';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ deviceId: string }> }
 ) {
   try {
+    const user=getTrustedRequestContext(req);
     const resolvedParams = await params;
     const deviceId = resolvedParams.deviceId;
 
     const operations = await prisma.syncOperation.findMany({
-      where: { deviceId },
+      where: user.role==='ADMIN'||user.role==='SUPERVISORA'?{deviceId}:{deviceId,userId:user.userId},
       orderBy: { clientCapturedAt: 'desc' },
       take: 50,
     });
@@ -37,7 +39,7 @@ export async function GET(
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
-      { status: 500 }
+      { status: String(error?.message||'').startsWith('UNAUTHORIZED')?401:500 }
     );
   }
 }
