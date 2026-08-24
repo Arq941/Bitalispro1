@@ -103,6 +103,16 @@ export class OfflineStorageService {
     const tx=db.transaction(STORE,'readwrite');for(const op of all)if(op.status==='SYNCED'&&Date.parse(op.updatedAt)<cutoff){tx.objectStore(STORE).delete(op.id);count++;}
     await txDone(tx);return count;
   }
+  async clearCachedUserData(userId:string){
+    const db=await this.db();if(!db||!userId)return;
+    const names=['cached_clients','cached_routes','cached_credits','sync_metadata'];
+    const tx=db.transaction(names,'readwrite');
+    for(const name of names){
+      const store=tx.objectStore(name),rows=await requestResult<any[]>(store.getAll());
+      for(const row of rows)if(row?.__ownerUserId===userId)store.delete(row.id);
+    }
+    await txDone(tx);
+  }
   async clearUserData(userId:string){
     const db=await this.db();if(!db)return;const tx=db.transaction([STORE,'cached_clients','cached_routes','cached_credits','sync_metadata'],'readwrite');
     const ops=await requestResult<OfflineOperation[]>(tx.objectStore(STORE).index('userId').getAll(userId));
