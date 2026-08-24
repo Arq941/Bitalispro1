@@ -9,7 +9,10 @@ const BATCH_SIZE=25;
 
 export function offlineIdentity(){
   if(typeof window==='undefined')return null;
-  const userId=localStorage.getItem('userId');
+  let userId='';
+  try{userId=String(JSON.parse(localStorage.getItem('bitalis_auth_user')||'{}')?.id||'');}catch{}
+  if(!userId)return null;
+  localStorage.setItem('userId',userId);
   let deviceId=localStorage.getItem('deviceId');
   if(!deviceId){
     deviceId=`PWA-${typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)}`;
