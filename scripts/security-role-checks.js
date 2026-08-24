@@ -121,6 +121,7 @@ const offlineClient = read('lib/offline-sync-client.ts');
 const offlineRoute = read('app/api/offline/sync/route.ts');
 const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
 const offlineService = read('src/offline/offline-sync.service.ts');
+const serviceWorker = read('public/sw.js');
 assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes("recoverStuck") && offlineStorage.includes("applyServerResult"),
   'offline queue must recover interrupted sync and reconcile each server result');
 assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
@@ -133,5 +134,7 @@ assert(offlineIndicator.includes("applyServerResult") === false && offlineIndica
   'offline UI must delegate per-operation reconciliation to the single sync coordinator');
 assert(offlineService.includes("OFFLINE_HANDLER_NOT_IMPLEMENTED") && !offlineService.includes("Generic fallback for custom synced entity"),
   'offline sync must never confirm a domain operation without executing its handler');
+assert(serviceWorker.includes('NAVIGATION_TIMEOUT_MS=3500') && serviceWorker.includes('fetchWithTimeout'),
+  'offline navigation must fall back promptly on unstable mobile connections');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
