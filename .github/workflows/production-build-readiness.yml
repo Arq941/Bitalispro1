@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-only-bitalis-jwt-secret-2026-not-for-production-7f4d2a91' }}
 
     steps:
       - name: Checkout
