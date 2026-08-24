@@ -1,251 +1,120 @@
 /**
- * IndexedDB Offline Storage Service for PWA / Mobile Cobrador
- * Supports offline operations queue and cached domain data.
+ * Durable, user-scoped IndexedDB queue for field operations.
+ * Records are never considered confirmed until the server acknowledges that exact idempotency key.
  */
-
+export type OfflineStatus = 'QUEUED'|'SYNCING'|'SYNCED'|'CONFLICT'|'FAILED'|'REJECTED';
 export interface OfflineOperation {
-  id: string;
-  idempotencyKey: string;
-  operationType: 'PAYMENT' | 'DOWN_PAYMENT' | 'VISIT' | 'NON_PAYMENT_REASON' | 'RESCHEDULE' | 'PAYMENT_PROMISE' | 'EXPENSE' | 'GPS_TRACE' | 'CLIENT' | 'SALE';
-  payload: any;
-  clientCapturedAt: string;
-  deviceId: string;
-  userId: string;
-  status: 'QUEUED' | 'SYNCING' | 'SYNCED' | 'CONFLICT' | 'FAILED' | 'REJECTED';
-  retryCount: number;
-  lastAttemptAt?: string;
-  serverReceivedAt?: string;
-  conflictCode?: string;
-  errorMessage?: string;
-  createdAt: string;
-  updatedAt: string;
+  id:string; idempotencyKey:string;
+  operationType:'PAYMENT'|'DOWN_PAYMENT'|'VISIT'|'NON_PAYMENT_REASON'|'RESCHEDULE'|'PAYMENT_PROMISE'|'EXPENSE'|'GPS_TRACE'|'CLIENT'|'SALE';
+  payload:unknown; clientCapturedAt:string; deviceId:string; userId:string;
+  status:OfflineStatus; retryCount:number; nextRetryAt?:string; lastAttemptAt?:string;
+  serverReceivedAt?:string; conflictCode?:string; errorMessage?:string;
+  createdAt:string; updatedAt:string;
 }
+const DB_NAME='CobranzaOfflineDB';
+const DB_VERSION=2;
+const STORE='offline_operations';
+const ACTIVE:OfflineStatus[]=['QUEUED','SYNCING','FAILED'];
 
-export interface SyncMetadata {
-  id: string;
-  lastSyncAt?: string;
-  pendingCount: number;
-  syncedCount: number;
-  conflictCount: number;
-  updatedAt: string;
+function requestResult<T>(req:IDBRequest<T>):Promise<T>{
+  return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
 }
-
-const DB_NAME = 'CobranzaOfflineDB';
-const DB_VERSION = 1;
-
+function txDone(tx:IDBTransaction):Promise<void>{
+  return new Promise((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+}
 export class OfflineStorageService {
-  private dbPromise: Promise<IDBDatabase> | null = null;
-
-  constructor() {
-    if (typeof window !== 'undefined' && 'indexedDB' in window) {
-      this.dbPromise = this.initDB();
-    }
-  }
-
-  private initDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
-        const db = request.result;
-
-        // Store: offline_operations
-        if (!db.objectStoreNames.contains('offline_operations')) {
-          const store = db.createObjectStore('offline_operations', { keyPath: 'id' });
-          store.createIndex('idempotencyKey', 'idempotencyKey', { unique: true });
-          store.createIndex('status', 'status', { unique: false });
-          store.createIndex('userId', 'userId', { unique: false });
-          store.createIndex('clientCapturedAt', 'clientCapturedAt', { unique: false });
-        }
-
-        // Store: cached_clients
-        if (!db.objectStoreNames.contains('cached_clients')) {
-          db.createObjectStore('cached_clients', { keyPath: 'id' });
-        }
-
-        // Store: cached_routes
-        if (!db.objectStoreNames.contains('cached_routes')) {
-          db.createObjectStore('cached_routes', { keyPath: 'id' });
-        }
-
-        // Store: cached_credits
-        if (!db.objectStoreNames.contains('cached_credits')) {
-          db.createObjectStore('cached_credits', { keyPath: 'id' });
-        }
-
-        // Store: sync_metadata
-        if (!db.objectStoreNames.contains('sync_metadata')) {
-          db.createObjectStore('sync_metadata', { keyPath: 'id' });
-        }
+  private dbPromise:Promise<IDBDatabase>|null=null;
+  constructor(){if(typeof window!=='undefined'&&'indexedDB'in window)this.dbPromise=this.initDB();}
+  private initDB():Promise<IDBDatabase>{
+    return new Promise((resolve,reject)=>{
+      const req=indexedDB.open(DB_NAME,DB_VERSION);
+      req.onupgradeneeded=()=>{
+        const db=req.result;
+        let store:IDBObjectStore;
+        if(!db.objectStoreNames.contains(STORE)){
+          store=db.createObjectStore(STORE,{keyPath:'id'});
+        }else store=req.transaction!.objectStore(STORE);
+        const indexes:[string,string,IDBIndexParameters][]=[
+          ['idempotencyKey','idempotencyKey',{unique:true}],['status','status',{unique:false}],
+          ['userId','userId',{unique:false}],['deviceId','deviceId',{unique:false}],
+          ['clientCapturedAt','clientCapturedAt',{unique:false}],['nextRetryAt','nextRetryAt',{unique:false}]
+        ];
+        for(const [name,key,opts] of indexes)if(!store.indexNames.contains(name))store.createIndex(name,key,opts);
+        for(const name of ['cached_clients','cached_routes','cached_credits','sync_metadata'])
+          if(!db.objectStoreNames.contains(name))db.createObjectStore(name,{keyPath:'id'});
       };
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      req.onsuccess=()=>{const db=req.result;db.onversionchange=()=>db.close();resolve(db);};
+      req.onerror=()=>reject(req.error);
+      req.onblocked=()=>reject(new Error('La base offline está abierta en otra pestaña. Cierra otras ventanas de BITALIS.'));
     });
   }
-
-  private async getDB(): Promise<IDBDatabase | null> {
-    if (typeof window === 'undefined' || !('indexedDB' in window)) {
-      return null;
-    }
-    if (!this.dbPromise) {
-      this.dbPromise = this.initDB();
-    }
-    return this.dbPromise;
+  private async db(){if(typeof window==='undefined'||!('indexedDB'in window))return null;if(!this.dbPromise)this.dbPromise=this.initDB();return this.dbPromise;}
+  async create(op:Omit<OfflineOperation,'createdAt'|'updatedAt'|'retryCount'|'status'> & {status?:OfflineStatus}):Promise<OfflineOperation>{
+    if(!op.userId||!op.deviceId||!op.idempotencyKey)throw new Error('Operación offline sin propietario, dispositivo o clave idempotente');
+    const now=new Date().toISOString();
+    const value:OfflineOperation={...op,status:op.status||'QUEUED',retryCount:0,createdAt:now,updatedAt:now};
+    const db=await this.db();if(!db)throw new Error('IndexedDB no está disponible; la operación no fue guardada');
+    const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).add(value);await txDone(tx);return value;
   }
-
-  public async create(op: Omit<OfflineOperation, 'createdAt' | 'updatedAt' | 'retryCount' | 'status'> & { status?: OfflineOperation['status'] }): Promise<OfflineOperation> {
-    const db = await this.getDB();
-    const now = new Date().toISOString();
-    const operation: OfflineOperation = {
-      ...op,
-      status: op.status || 'QUEUED',
-      retryCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    if (!db) {
-      return operation;
-    }
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readwrite');
-      const store = tx.objectStore('offline_operations');
-      const req = store.add(operation);
-      req.onsuccess = () => resolve(operation);
-      req.onerror = () => reject(req.error);
-    });
+  async get(id:string){const db=await this.db();if(!db)return null;return (await requestResult(db.transaction(STORE).objectStore(STORE).get(id)))||null;}
+  async update(id:string,updates:Partial<OfflineOperation>){
+    const db=await this.db();if(!db)return null;const tx=db.transaction(STORE,'readwrite');const store=tx.objectStore(STORE);
+    const current=await requestResult<OfflineOperation|undefined>(store.get(id));if(!current){tx.abort();return null;}
+    const value={...current,...updates,id:current.id,idempotencyKey:current.idempotencyKey,userId:current.userId,deviceId:current.deviceId,updatedAt:new Date().toISOString()};
+    store.put(value);await txDone(tx);return value;
   }
-
-  public async get(id: string): Promise<OfflineOperation | null> {
-    const db = await this.getDB();
-    if (!db) return null;
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readonly');
-      const store = tx.objectStore('offline_operations');
-      const req = store.get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+  async listForUser(userId:string,deviceId?:string,includeTerminal=false){
+    const db=await this.db();if(!db)return[];const all=await requestResult<OfflineOperation[]>(db.transaction(STORE).objectStore(STORE).index('userId').getAll(userId));
+    return all.filter(o=>(!deviceId||o.deviceId===deviceId)&&(includeTerminal||ACTIVE.includes(o.status)))
+      .sort((a,b)=>Date.parse(a.clientCapturedAt)-Date.parse(b.clientCapturedAt));
   }
-
-  public async update(id: string, updates: Partial<OfflineOperation>): Promise<OfflineOperation | null> {
-    const existing = await this.get(id);
-    if (!existing) return null;
-
-    const updated: OfflineOperation = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const db = await this.getDB();
-    if (!db) return updated;
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readwrite');
-      const store = tx.objectStore('offline_operations');
-      const req = store.put(updated);
-      req.onsuccess = () => resolve(updated);
-      req.onerror = () => reject(req.error);
-    });
+  async getPending(userId?:string,deviceId?:string){
+    if(!userId)return [];
+    const now=Date.now();return (await this.listForUser(userId,deviceId)).filter(o=>o.status!=='FAILED'||!o.nextRetryAt||Date.parse(o.nextRetryAt)<=now);
   }
-
-  public async delete(id: string): Promise<boolean> {
-    const db = await this.getDB();
-    if (!db) return false;
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readwrite');
-      const store = tx.objectStore('offline_operations');
-      const req = store.delete(id);
-      req.onsuccess = () => resolve(true);
-      req.onerror = () => reject(req.error);
-    });
+  async claim(ids:string[]){
+    const now=new Date().toISOString();
+    for(const id of ids)await this.update(id,{status:'SYNCING',lastAttemptAt:now});
   }
-
-  public async getPending(): Promise<OfflineOperation[]> {
-    const db = await this.getDB();
-    if (!db) return [];
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readonly');
-      const store = tx.objectStore('offline_operations');
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const all: OfflineOperation[] = req.result || [];
-        const pending = all.filter((o) => o.status === 'QUEUED' || o.status === 'FAILED');
-        resolve(pending.sort((a, b) => new Date(a.clientCapturedAt).getTime() - new Date(b.clientCapturedAt).getTime()));
-      };
-      req.onerror = () => reject(req.error);
-    });
+  async recoverStuck(userId:string,deviceId:string,maxAgeMs=120000){
+    const cutoff=Date.now()-maxAgeMs;const ops=await this.listForUser(userId,deviceId);
+    for(const op of ops)if(op.status==='SYNCING'&&Date.parse(op.lastAttemptAt||op.updatedAt)<cutoff)await this.update(op.id,{status:'QUEUED',errorMessage:'Sincronización interrumpida; se reintentará'});
   }
-
-  public async markSynced(id: string, serverReceivedAt?: string): Promise<OfflineOperation | null> {
-    return this.update(id, {
-      status: 'SYNCED',
-      serverReceivedAt: serverReceivedAt || new Date().toISOString(),
-    });
+  async applyServerResult(id:string,result:any){
+    if(result?.status==='SYNCED'||result?.status==='DUPLICATE')
+      return this.update(id,{status:'SYNCED',serverReceivedAt:result.serverReceivedAt,errorMessage:undefined,conflictCode:undefined});
+    if(result?.status==='CONFLICT')
+      return this.update(id,{status:'CONFLICT',conflictCode:result.conflictCode,errorMessage:result.errorMessage});
+    if(result?.status==='REJECTED')
+      return this.update(id,{status:'REJECTED',errorMessage:result.errorMessage});
+    const current=await this.get(id);const retry=(current?.retryCount||0)+1;
+    const delay=Math.min(300000,Math.max(5000,2**Math.min(retry,6)*1000))+Math.floor(Math.random()*1500);
+    return this.update(id,{status:'FAILED',retryCount:retry,nextRetryAt:new Date(Date.now()+delay).toISOString(),errorMessage:result?.errorMessage||'No confirmado por el servidor'});
   }
-
-  public async markConflict(id: string, conflictCode: string, errorMessage?: string): Promise<OfflineOperation | null> {
-    return this.update(id, {
-      status: 'CONFLICT',
-      conflictCode,
-      errorMessage,
-    });
+  async releaseAfterNetworkError(ids:string[],message='Sin conexión; la operación sigue pendiente'){
+    for(const id of ids){const op=await this.get(id);const retry=(op?.retryCount||0)+1;const delay=Math.min(300000,2**Math.min(retry,6)*1000);
+      await this.update(id,{status:'FAILED',retryCount:retry,nextRetryAt:new Date(Date.now()+delay).toISOString(),errorMessage:message});}
   }
-
-  public async clearSynced(): Promise<number> {
-    const db = await this.getDB();
-    if (!db) return 0;
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('offline_operations', 'readwrite');
-      const store = tx.objectStore('offline_operations');
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const all: OfflineOperation[] = req.result || [];
-        const synced = all.filter((o) => o.status === 'SYNCED');
-        let deleted = 0;
-        synced.forEach((item) => {
-          store.delete(item.id);
-          deleted++;
-        });
-        resolve(deleted);
-      };
-      req.onerror = () => reject(req.error);
-    });
+  async clearConfirmed(userId:string,olderThanMs=86400000){
+    const db=await this.db();if(!db)return 0;const all=await this.listForUser(userId,undefined,true);const cutoff=Date.now()-olderThanMs;let count=0;
+    const tx=db.transaction(STORE,'readwrite');for(const op of all)if(op.status==='SYNCED'&&Date.parse(op.updatedAt)<cutoff){tx.objectStore(STORE).delete(op.id);count++;}
+    await txDone(tx);return count;
   }
-
-  public async saveCachedData(storeName: 'cached_clients' | 'cached_routes' | 'cached_credits', items: any[]): Promise<void> {
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      store.clear();
-      items.forEach((item) => store.put(item));
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+  async clearUserData(userId:string){
+    const db=await this.db();if(!db)return;const tx=db.transaction([STORE,'cached_clients','cached_routes','cached_credits','sync_metadata'],'readwrite');
+    const ops=await requestResult<OfflineOperation[]>(tx.objectStore(STORE).index('userId').getAll(userId));
+    for(const op of ops)tx.objectStore(STORE).delete(op.id);
+    for(const name of ['cached_clients','cached_routes','cached_credits','sync_metadata'])tx.objectStore(name).clear();
+    await txDone(tx);
   }
-
-  public async getCachedData(storeName: 'cached_clients' | 'cached_routes' | 'cached_credits'): Promise<any[]> {
-    const db = await this.getDB();
-    if (!db) return [];
-
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readonly');
-      const store = tx.objectStore(storeName);
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+  async saveCachedData(storeName:'cached_clients'|'cached_routes'|'cached_credits',items:any[],userId?:string){
+    if(!userId)throw new Error('No se puede guardar caché offline sin usuario');
+    const db=await this.db();if(!db)throw new Error('IndexedDB no disponible');const tx=db.transaction(storeName,'readwrite');const store=tx.objectStore(storeName);
+    store.clear();for(const item of items)store.put({...item,id:String(item.id),__ownerUserId:userId});await txDone(tx);
+  }
+  async getCachedData(storeName:'cached_clients'|'cached_routes'|'cached_credits',userId?:string){
+    if(!userId)return[];const db=await this.db();if(!db)return[];const all=await requestResult<any[]>(db.transaction(storeName).objectStore(storeName).getAll());
+    return all.filter(x=>x.__ownerUserId===userId).map(({__ownerUserId,...x})=>x);
   }
 }
-
-export const offlineStorage = new OfflineStorageService();
+export const offlineStorage=new OfflineStorageService();
