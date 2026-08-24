@@ -69,6 +69,7 @@ export class OfflineStorageService {
       .sort((a,b)=>Date.parse(a.clientCapturedAt)-Date.parse(b.clientCapturedAt));
   }
   async getPending(userId?:string,deviceId?:string){
+    if(!userId&&typeof window!=='undefined')userId=localStorage.getItem('userId')||undefined;
     if(!userId)return [];
     const now=Date.now();return (await this.listForUser(userId,deviceId)).filter(o=>o.status!=='FAILED'||!o.nextRetryAt||Date.parse(o.nextRetryAt)<=now);
   }
@@ -95,6 +96,8 @@ export class OfflineStorageService {
     for(const id of ids){const op=await this.get(id);const retry=(op?.retryCount||0)+1;const delay=Math.min(300000,2**Math.min(retry,6)*1000);
       await this.update(id,{status:'FAILED',retryCount:retry,nextRetryAt:new Date(Date.now()+delay).toISOString(),errorMessage:message});}
   }
+  async delete(id:string){const db=await this.db();if(!db)return false;const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);await txDone(tx);return true;}
+  async clearSynced(){const userId=typeof window!=='undefined'?localStorage.getItem('userId'):null;return userId?this.clearConfirmed(userId,0):0;}
   async clearConfirmed(userId:string,olderThanMs=86400000){
     const db=await this.db();if(!db)return 0;const all=await this.listForUser(userId,undefined,true);const cutoff=Date.now()-olderThanMs;let count=0;
     const tx=db.transaction(STORE,'readwrite');for(const op of all)if(op.status==='SYNCED'&&Date.parse(op.updatedAt)<cutoff){tx.objectStore(STORE).delete(op.id);count++;}
