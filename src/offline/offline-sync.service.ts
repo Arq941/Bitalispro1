@@ -252,32 +252,30 @@ export class OfflineSyncService {
       } else if (op.operationType === 'GPS_TRACE') {
         return await this.processGpsTraceOperation(deviceId, userId, idempotencyKey, op.payload, clientCapturedAt, serverReceivedAt, payloadHash);
       } else {
-        // Generic fallback for custom synced entity
+        // Never acknowledge an operation whose domain mutation was not executed.
         await prisma.syncOperation.upsert({
           where: { idempotencyKey },
           create: {
-            idempotencyKey,
-            deviceId,
-            userId,
-            operationType: op.operationType,
-            clientCapturedAt,
-            serverReceivedAt,
-            status: 'SYNCED',
-            payload: JSON.stringify(op.payload),
-            payloadHash,
+            idempotencyKey, deviceId, userId, operationType: op.operationType,
+            clientCapturedAt, serverReceivedAt, status: 'REJECTED',
+            payload: JSON.stringify(op.payload), payloadHash,
+            errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+            errorMessage: 'Esta operación todavía no tiene un procesador offline seguro.',
           },
           update: {
-            status: 'SYNCED',
-            serverReceivedAt,
+            status: 'REJECTED',
+            errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+            errorMessage: 'Esta operación todavía no tiene un procesador offline seguro.',
           },
         });
-
         return {
           idempotencyKey,
-          status: 'SYNCED',
-          data: { success: true },
+          status: 'REJECTED',
+          errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+          errorMessage: 'La operación no fue aplicada ni confirmada.',
           serverReceivedAt: serverReceivedAt.toISOString(),
         };
+
       }
     } catch (err: any) {
       const errorMessage = err?.message || 'Error durante la sincronización de la operación';
