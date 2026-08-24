@@ -103,8 +103,9 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   const onFocus=()=>{void refreshPermissions();};
   const onChanged=()=>{void refreshPermissions();};
   window.addEventListener('focus',onFocus);
+  window.addEventListener('online',onFocus);
   window.addEventListener('bitalis:permissions-changed',onChanged);
-  return()=>{window.removeEventListener('focus',onFocus);window.removeEventListener('bitalis:permissions-changed',onChanged);};
+  return()=>{window.removeEventListener('focus',onFocus);window.removeEventListener('online',onFocus);window.removeEventListener('bitalis:permissions-changed',onChanged);};
  },[hydrated,publicPath,user]);
 
  useEffect(()=>{
