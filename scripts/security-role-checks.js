@@ -116,4 +116,19 @@ assert(collectionVisits.includes("requirePermission(user.userId, 'collections.co
 assert(collectionVisits.includes('proximaVisita: nextDate') && routePage.includes("rescheduleDate:result==='RESCHEDULED'"),
   'rescheduling from route must persist the next visit date');
 
+const offlineStorage = read('lib/offline-storage.ts');
+const offlineClient = read('lib/offline-sync-client.ts');
+const offlineRoute = read('app/api/offline/sync/route.ts');
+const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
+assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes("recoverStuck") && offlineStorage.includes("applyServerResult"),
+  'offline queue must recover interrupted sync and reconcile each server result');
+assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
+  'offline operations and cached records must remain scoped to their owner and device');
+assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
+  'offline sync must use authenticated API access and never fallback to fabricated identities');
+assert(offlineRoute.includes("MAX_BATCH=25") && offlineRoute.includes("userId:undefined") && offlineRoute.includes("extractUserContext"),
+  'offline batches must be bounded and bound exclusively to the verified session');
+assert(offlineIndicator.includes("applyServerResult") === false && offlineIndicator.includes("syncOfflineQueue"),
+  'offline UI must delegate per-operation reconciliation to the single sync coordinator');
+
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
