@@ -14,6 +14,7 @@ const adminAccess = read('app/api/admin/access/route.ts');
 const shell = read('components/phase15/AppShell.tsx');
 const clients = read('src/crm/client.service.ts');
 const intake = read('app/api/clients/intake/route.ts');
+const quickIntake = read('app/clients/new/QuickClientIntake.tsx');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
 const newSale = read('app/sales/new/page.tsx');
 const notifications = read('src/notifications/notifications.service.ts');
@@ -128,6 +129,12 @@ assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") 
   'offline operations and cached records must remain scoped to their owner and device');
 assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
   'offline sync must use authenticated API access and never fallback to fabricated identities');
+assert(quickIntake.includes("offlineStorage.create") && quickIntake.includes("operationType:'CLIENT'") && !quickIntake.includes("phase15/offlineQueue"),
+  'quick client intake must use the durable owner-scoped queue');
+assert(offlineClient.includes("clientIntakeForm") && offlineClient.includes("value instanceof Blob") && offlineClient.includes("body:clientIntakeForm(op)"),
+  'queued client photos must be reconstructed and synchronized as multipart data');
+assert(offlineClient.includes("await offlineStorage.delete(op.id)") && offlineClient.includes("[400,403,404].includes"),
+  'client photos must be deleted only after acknowledgement and permanent rejections must not retry forever');
 assert(offlineRoute.includes("MAX_BATCH=25") && offlineRoute.includes("userId:undefined") && offlineRoute.includes("extractUserContext"),
   'offline batches must be bounded and bound exclusively to the verified session');
 assert(offlineIndicator.includes("applyServerResult") === false && offlineIndicator.includes("syncOfflineQueue"),
