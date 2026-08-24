@@ -51,3 +51,14 @@ export async function getApiCache<T=any>(path:string):Promise<T|null>{
   const db=await openDb();
   return new Promise((resolve,reject)=>{const r=db.transaction(STORE).objectStore(STORE).get(keyFor(path));r.onsuccess=()=>resolve((r.result?.value??null) as T|null);r.onerror=()=>reject(r.error);});
 }
+
+
+export async function clearApiCacheForUser(userId:string){
+  if(typeof window==='undefined'||!('indexedDB'in window)||!userId)return;
+  const db=await openDb(),prefix=`${userId}:`;
+  await new Promise<void>((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite'),cursor=tx.objectStore(STORE).openCursor();
+    cursor.onsuccess=()=>{const current=cursor.result;if(!current)return;if(String(current.key).startsWith(prefix))current.delete();current.continue();};
+    cursor.onerror=()=>reject(cursor.error);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
+  });
+}
