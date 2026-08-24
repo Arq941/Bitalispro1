@@ -56,9 +56,13 @@
     "eslint-config-next": "15.5.23"
   },
   "overrides": {
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "postcss": "^8.5.23",
+    "sharp": "^0.35.0"
   },
   "resolutions": {
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "postcss": "^8.5.23",
+    "sharp": "^0.35.0"
   }
 }
