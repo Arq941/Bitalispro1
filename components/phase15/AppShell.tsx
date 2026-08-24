@@ -9,6 +9,8 @@ import {apiClient} from '@/lib/phase15/apiClient';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 import {haptic} from '@/lib/ux/haptics';
 import {prepareOfflineData} from '@/lib/phase15/offlineWarmup';
+import {clearApiCacheForUser} from '@/lib/phase15/apiCache';
+import {offlineStorage} from '@/lib/offline-storage';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
@@ -21,7 +23,7 @@ const seller:NavItem[]=[{href:'/clients/new',label:'Alta rápida',icon:UserPlus,
 const supervisor:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/portfolio',label:'Cartera',icon:WalletCards,permission:'collections.view'},{href:'/authorizations',label:'Autorizar',icon:ShieldCheck,permission:'sales.approve'},{href:'/renewals',label:'Renovar',icon:ClipboardCheck,permission:'renewals.view'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'}];
 const admin:NavItem[]=[{href:'/dashboard',label:'Inicio',icon:Home,permission:'dashboard.view'},{href:'/clients/new',label:'Alta',icon:UserPlus,permission:'clients.create'},{href:'/control-center',label:'Control',icon:Boxes,permission:'reports.view'},{href:'/settings/users',label:'Usuarios',icon:Users,permission:'users.manage'},{href:'/admin-menu',label:'Menú',icon:Menu,permission:'settings.manage'}];
 const menus:Record<string,NavItem[]>={COBRADOR:collector,VENDEDORA:seller,VENDEDOR:seller,SUPERVISORA:supervisor,SUPERVISOR:supervisor,ADMIN:admin};
-const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
+const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user','userId','bitalis_offline_ready'];
 const permissionCacheKey='bitalis_effective_permissions';
 const routePermissions:[string,string][]=[['/settings/users','users.manage'],['/settings/password-links','users.manage'],['/settings','settings.manage'],['/admin-menu','settings.manage'],['/offline/conflicts','route.manage'],['/notifications','dashboard.view'],['/supervision/down-payments','sales.view'],['/clients/new','clients.create'],['/clients','clients.view'],['/sales/new','sales.create'],['/sales','sales.view'],['/products','inventory.view'],['/portfolio','collections.view'],['/collections','collections.view'],['/route','route.view'],['/cash','cash.view'],['/orders','inventory.manage'],['/inventory','inventory.view'],['/renewals','renewals.view'],['/commissions','commissions.view'],['/reports','reports.view'],['/audit','audit.view'],['/authorizations','sales.approve'],['/control-center','reports.view'],['/dashboard','dashboard.view']];
 const routeTitles:[string,string][]=[['/settings/users','Usuarios'],['/settings/password-links','Enlaces de contraseña'],['/settings','Configuración'],['/admin-menu','Menú administrador'],['/supervision/down-payments','Enganches'],['/clients/new','Alta rápida'],['/clients','Clientes'],['/sales/new','Nueva venta'],['/sales','Ventas'],['/products','Productos'],['/portfolio','Cartera'],['/collections','Cobranza'],['/route','Ruta'],['/cash','Caja'],['/orders','Órdenes de compra'],['/inventory/counts','Conteos y transferencias'],['/inventory/catalogs','Proveedores y almacenes'],['/inventory/operations','Operaciones de inventario'],['/inventory','Stock'],['/renewals','Renovaciones'],['/commissions','Comisiones'],['/reports','Reportes'],['/audit','Auditoría'],['/authorizations','Autorizaciones'],['/control-center','Control'],['/offline/conflicts','Conflictos offline'],['/notifications','Alertas'],['/dashboard','Inicio']];
@@ -214,6 +216,11 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   }catch{}finally{
    window.clearTimeout(timer);
    traceAuthTransition('logout-atomic-redirect');
+   const ownerId=user?.id;
+   if(ownerId)await Promise.race([
+    Promise.allSettled([clearApiCacheForUser(ownerId),offlineStorage.clearCachedUserData(ownerId)]),
+    new Promise(resolve=>window.setTimeout(resolve,1200))
+   ]);
    authKeys.forEach(key=>localStorage.removeItem(key));
    sessionStorage.removeItem(permissionCacheKey);
    localStorage.removeItem(permissionCacheKey);
