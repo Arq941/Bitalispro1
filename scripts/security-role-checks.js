@@ -134,6 +134,14 @@ assert(offlineIndicator.includes("applyServerResult") === false && offlineIndica
   'offline UI must delegate per-operation reconciliation to the single sync coordinator');
 assert(offlineService.includes("OFFLINE_HANDLER_NOT_IMPLEMENTED") && !offlineService.includes("Generic fallback for custom synced entity"),
   'offline sync must never confirm a domain operation without executing its handler');
+assert(offlineService.includes("processSaleOperation") && offlineService.includes("prisma.$transaction") &&
+  offlineService.includes("inventoryStock.updateMany") && offlineService.includes("syncOperation.create"),
+  'offline sale, inventory and acknowledgement must commit in one transaction');
+for(const entity of ['saleDownPayment.create','companyContribution.create','credit.create','commission.create','auditLog.create']){
+  assert(offlineService.includes(entity),'atomic offline sale must include '+entity);
+}
+assert(offlineRoute.includes("permissionByType") && offlineRoute.includes("PermissionService.requirePermission"),
+  'queued offline mutations must be reauthorized with current permissions at sync time');
 assert(serviceWorker.includes('NAVIGATION_TIMEOUT_MS=3500') && serviceWorker.includes('fetchWithTimeout'),
   'offline navigation must fall back promptly on unstable mobile connections');
 
