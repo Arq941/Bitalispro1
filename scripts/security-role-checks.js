@@ -120,6 +120,7 @@ const offlineStorage = read('lib/offline-storage.ts');
 const offlineClient = read('lib/offline-sync-client.ts');
 const offlineRoute = read('app/api/offline/sync/route.ts');
 const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
+const offlineService = read('src/offline/offline-sync.service.ts');
 assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes("recoverStuck") && offlineStorage.includes("applyServerResult"),
   'offline queue must recover interrupted sync and reconcile each server result');
 assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
@@ -130,5 +131,7 @@ assert(offlineRoute.includes("MAX_BATCH=25") && offlineRoute.includes("userId:un
   'offline batches must be bounded and bound exclusively to the verified session');
 assert(offlineIndicator.includes("applyServerResult") === false && offlineIndicator.includes("syncOfflineQueue"),
   'offline UI must delegate per-operation reconciliation to the single sync coordinator');
+assert(offlineService.includes("OFFLINE_HANDLER_NOT_IMPLEMENTED") && !offlineService.includes("Generic fallback for custom synced entity"),
+  'offline sync must never confirm a domain operation without executing its handler');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');
