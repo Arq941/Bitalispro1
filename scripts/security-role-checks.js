@@ -145,6 +145,8 @@ assert(loginPage.includes("!navigator.onLine") && loginPage.includes("localStora
   'cold offline startup must reuse only a permission matrix previously validated online');
 assert(loginPage.includes("localStorage.removeItem(permissionCacheKey)"),
   'starting a different login must remove the previous account permission snapshot');
+assert(shell.includes("window.addEventListener('online',onFocus)"),
+  'permissions must be revalidated immediately when connectivity returns');
 assert(quickIntake.includes("offlineStorage.create") && quickIntake.includes("operationType:'CLIENT'") && !quickIntake.includes("phase15/offlineQueue"),
   'quick client intake must use the durable owner-scoped queue');
 assert(offlineClient.includes("clientIntakeForm") && offlineClient.includes("value instanceof Blob") && offlineClient.includes("body:clientIntakeForm(op)"),
