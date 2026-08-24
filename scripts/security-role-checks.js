@@ -12,6 +12,7 @@ const payments = read('app/api/payments/route.ts');
 const permissions = read('src/server/auth/permission.service.ts');
 const adminAccess = read('app/api/admin/access/route.ts');
 const shell = read('components/phase15/AppShell.tsx');
+const loginPage = read('app/page.tsx');
 const clients = read('src/crm/client.service.ts');
 const intake = read('app/api/clients/intake/route.ts');
 const quickIntake = read('app/clients/new/QuickClientIntake.tsx');
@@ -139,6 +140,11 @@ assert(shell.includes('clearApiCacheForUser(ownerId)') && shell.includes('offlin
   'logout and account switching must remove readable owner caches and stale identity markers');
 assert(apiCache.includes('clearApiCacheForUser') && offlineStorage.includes('clearCachedUserData'),
   'offline cache cleanup must be available without deleting pending mutations');
+assert(loginPage.includes("!navigator.onLine") && loginPage.includes("localStorage.getItem(permissionCacheKey)") &&
+  loginPage.includes("localStorage.setItem(permissionCacheKey"),
+  'cold offline startup must reuse only a permission matrix previously validated online');
+assert(loginPage.includes("localStorage.removeItem(permissionCacheKey)"),
+  'starting a different login must remove the previous account permission snapshot');
 assert(quickIntake.includes("offlineStorage.create") && quickIntake.includes("operationType:'CLIENT'") && !quickIntake.includes("phase15/offlineQueue"),
   'quick client intake must use the durable owner-scoped queue');
 assert(offlineClient.includes("clientIntakeForm") && offlineClient.includes("value instanceof Blob") && offlineClient.includes("body:clientIntakeForm(op)"),
