@@ -12,7 +12,7 @@ import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 
 const permissionCacheKey='bitalis_effective_permissions';
-const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
+const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user','userId','bitalis_offline_ready'];
 const webBuild=BITALIS_BUILD_COMMIT==='development'?'DEV':BITALIS_BUILD_COMMIT.slice(0,8);
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type EntrySource='login'|'restore';
