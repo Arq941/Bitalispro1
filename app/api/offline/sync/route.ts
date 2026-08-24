@@ -1,6 +1,7 @@
 import {NextRequest,NextResponse}from'next/server';
 import{OfflineSyncService,SyncOperationPayload}from'@/src/offline/offline-sync.service';
 import{extractUserContext}from'@/src/sales/sales-auth.helper';
+import{PermissionService}from'@/src/server/auth/permission.service';
 
 const MAX_BATCH=25;
 const ALLOWED=new Set(['PAYMENT','DOWN_PAYMENT','VISIT','NON_PAYMENT_REASON','RESCHEDULE','PAYMENT_PROMISE','EXPENSE','GPS_TRACE','CLIENT','SALE','PRICE_OVERRIDE','DISCOUNT_OVERRIDE','TWO_PRODUCT_SALE','FORCE_CREDIT','CASH_ADJUSTMENT']);
@@ -26,6 +27,9 @@ export async function POST(req:NextRequest){
   const user=await extractUserContext(req);const body=await req.json();
   const operations=Array.isArray(body?.operations)?body.operations:body?.idempotencyKey?[body]:[];
   const error=validate(body?.deviceId,operations);if(error)return NextResponse.json({success:false,error},{status:400});
+  // Every queued mutation is re-authorized at sync time; old offline permissions never grant writes.
+  const permissionByType:Record<string,string>={SALE:'sales.create',PAYMENT:'collections.collect',DOWN_PAYMENT:'sales.create',VISIT:'collections.collect',NON_PAYMENT_REASON:'collections.collect',RESCHEDULE:'collections.collect',PAYMENT_PROMISE:'collections.collect',EXPENSE:'cash.manage',GPS_TRACE:'routes.view',CLIENT:'clients.create'};
+  for(const op of operations){const permission=permissionByType[String(op.operationType)];if(permission)await PermissionService.requirePermission(user.userId,permission);}
   // Identity is taken only from the verified session. Client supplied userId is ignored.
   const sanitized=operations.map((op:any)=>({...op,userId:undefined,deviceId:body.deviceId}));
   const results=await OfflineSyncService.processSyncBatch(body.deviceId,user.userId,sanitized);
