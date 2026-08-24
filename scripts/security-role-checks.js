@@ -78,6 +78,8 @@ assert(intake.includes("['ADMIN','SUPERVISORA','VENDEDORA','COBRADOR'].includes(
   'quick intake endpoint must be available to every authenticated operational role');
 assert(intake.includes('Respuesta deliberadamente ciega'),
   'quick intake response must not leak the created record');
+assert(intake.includes('prisma.idempotencyRecord.findUnique') && intake.includes('prisma.idempotencyRecord.upsert'),
+  'complete client intake acknowledgement must survive process restarts and lost responses');
 assert(androidSecurity.includes('LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L'),
   'Android must require biometric unlock after two minutes in background');
 assert(androidSecurity.includes('CREDENTIAL_SESSION_MS = 8L * 60L * 60L * 1000L'),
