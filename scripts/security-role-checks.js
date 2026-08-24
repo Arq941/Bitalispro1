@@ -120,6 +120,7 @@ assert(collectionVisits.includes('proximaVisita: nextDate') && routePage.include
   'rescheduling from route must persist the next visit date');
 
 const offlineStorage = read('lib/offline-storage.ts');
+const apiCache = read('lib/phase15/apiCache.ts');
 const offlineClient = read('lib/offline-sync-client.ts');
 const offlineRoute = read('app/api/offline/sync/route.ts');
 const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
@@ -131,6 +132,13 @@ assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") 
   'offline operations and cached records must remain scoped to their owner and device');
 assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
   'offline sync must use authenticated API access and never fallback to fabricated identities');
+assert(offlineClient.includes("localStorage.getItem('bitalis_auth_user')") && offlineClient.includes("if(!userId)return null"),
+  'offline queue identity must come from the authenticated session and fail closed after logout');
+assert(shell.includes('clearApiCacheForUser(ownerId)') && shell.includes('offlineStorage.clearCachedUserData(ownerId)') &&
+  shell.includes("'userId','bitalis_offline_ready'"),
+  'logout and account switching must remove readable owner caches and stale identity markers');
+assert(apiCache.includes('clearApiCacheForUser') && offlineStorage.includes('clearCachedUserData'),
+  'offline cache cleanup must be available without deleting pending mutations');
 assert(quickIntake.includes("offlineStorage.create") && quickIntake.includes("operationType:'CLIENT'") && !quickIntake.includes("phase15/offlineQueue"),
   'quick client intake must use the durable owner-scoped queue');
 assert(offlineClient.includes("clientIntakeForm") && offlineClient.includes("value instanceof Blob") && offlineClient.includes("body:clientIntakeForm(op)"),
