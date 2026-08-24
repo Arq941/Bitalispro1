@@ -53,8 +53,17 @@ export default function ProductionLoginPage() {
       const json:any=await apiClient('/api/auth/permissions',{timeoutMs:12000,retry:1});
       const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
       sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
+      localStorage.setItem(permissionCacheKey,JSON.stringify(codes));
       return codes;
-    }catch{return null;}
+    }catch{
+      if(typeof navigator!=='undefined'&&!navigator.onLine){
+        try{
+          const cached=JSON.parse(localStorage.getItem(permissionCacheKey)||'null');
+          if(Array.isArray(cached)&&cached.every(code=>typeof code==='string'))return cached;
+        }catch{}
+      }
+      return null;
+    }
   };
 
   const enterAuthenticatedApp=async(user:SessionUser,permissionCodes:string[],source:EntrySource)=>{
@@ -103,6 +112,7 @@ export default function ProductionLoginPage() {
       } catch {
         authKeys.forEach(key=>localStorage.removeItem(key));
         sessionStorage.removeItem(permissionCacheKey);
+        localStorage.removeItem(permissionCacheKey);
       }
     }
 
@@ -126,6 +136,7 @@ export default function ProductionLoginPage() {
     setError('');
     authKeys.forEach(key=>localStorage.removeItem(key));
     sessionStorage.removeItem(permissionCacheKey);
+    localStorage.removeItem(permissionCacheKey);
     try {
       navigator.vibrate?.(18);
       const response = await fetch('/api/auth/login', {
