@@ -14,7 +14,6 @@ const PUBLIC_API=[
 
 const SUPERVISION_PREFIXES=[
   '/api/admin/',
-  '/api/audit',
   '/api/cash/supervisor/',
   '/api/cash-variances/',
   '/api/offline/conflicts',
@@ -25,7 +24,7 @@ const SUPERVISION_PREFIXES=[
   '/api/commissions/reversals',
 ];
 
-const ADMIN_ONLY_PREFIXES=['/api/admin/'];
+const ADMIN_ONLY_PREFIXES=['/api/admin/','/api/audit','/api/inventory','/api/product-orders'];
 
 function base64UrlBytes(value:string){
   const normalized=value.replace(/-/g,'+').replace(/_/g,'/');

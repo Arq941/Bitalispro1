@@ -42,6 +42,14 @@ assert(middleware.includes("matcher:['/api/:path*']") && middleware.includes("cr
   'every API route must pass the central cryptographic authentication gate');
 assert(middleware.includes('SUPERVISION_PREFIXES') && middleware.includes('ADMIN_ONLY_PREFIXES'),
   'legacy APIs must be protected centrally by role');
+for(const prefix of ['/api/audit','/api/inventory','/api/product-orders']){
+  assert(middleware.includes(prefix),'admin-only API barrier must include '+prefix);
+}
+assert(permissions.includes('ADMIN_EXCLUSIVE_PERMISSION_CODES') &&
+  permissions.includes("if (ADMIN_EXCLUSIVE_PERMISSION_CODES.has(code)) return false"),
+  'inventory, purchases, audit, users and settings must remain exclusive to ADMIN even with stale grants');
+assert(!permissions.match(/SUPERVISORA:[\s\S]*?'inventory\.view'/),
+  'SUPERVISORA fallback must never inherit inventory access');
 assert(refundRoute.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && refundRoute.includes('authorizedBy: supervisor.userId'),
   'refunds must use the authenticated supervisor identity');
 assert(conflictResolution.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && conflictResolution.includes('supervisorId: supervisor.userId'),
