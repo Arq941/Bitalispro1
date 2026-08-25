@@ -1,5 +1,5 @@
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v4`;
+const CACHE_NAME=`${CACHE_PREFIX}v5`;
 const NAVIGATION_TIMEOUT_MS=3500;
 const CORE=[
   '/','/dashboard','/route','/route/close','/collections','/portfolio','/clients','/clients/new','/products','/inventory','/cash','/notifications','/settings','/sync',
@@ -32,10 +32,12 @@ async function fetchWithTimeout(request,timeoutMs){
   try{return await fetch(request,{signal:controller.signal});}finally{clearTimeout(timer);}
 }
 
-async function networkFirst(request){
+async function networkFirst(request,options={}){
   const cache=await caches.open(CACHE_NAME);
   try{
-    const response=await fetchWithTimeout(request,request.mode==='navigate'?NAVIGATION_TIMEOUT_MS:8000);
+    const response=options.reload
+      ?await fetch(request,{cache:'reload',credentials:'same-origin'})
+      :await fetchWithTimeout(request,request.mode==='navigate'?NAVIGATION_TIMEOUT_MS:8000);
     if(response.ok)await cache.put(request,response.clone());
     return response;
   }catch(error){
@@ -89,7 +91,9 @@ self.addEventListener('fetch',event=>{
     return;
   }
   if(url.pathname.startsWith('/_next/static/')){
-    event.respondWith(cacheFirst(request));
+    // En línea se revalida el chunk saltando la caché HTTP. Si la conexión falla,
+    // se conserva el chunk verificado de Cache Storage para operación offline.
+    event.respondWith(networkFirst(request,{reload:true}));
     return;
   }
   if(url.pathname.startsWith('/_next/')||url.searchParams.has('_rsc')){
