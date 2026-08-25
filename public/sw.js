@@ -1,5 +1,7 @@
+const BUILD_COMMIT='development';
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v6`;
+const SAFE_BUILD_COMMIT=String(BUILD_COMMIT||'unknown').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,20)||'unknown';
+const CACHE_NAME=`${CACHE_PREFIX}${SAFE_BUILD_COMMIT}`;
 const NAVIGATION_TIMEOUT_MS=3500;
 const CORE=[
   '/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'
@@ -12,15 +14,19 @@ self.addEventListener('install',event=>{
       const response=await fetch(url,{cache:'reload',credentials:'same-origin'});
       if(response.ok)await cache.put(url,response);
     }));
-    // La versión nueva queda en espera y se activa al cerrar la instancia actual.
-    // Así nunca reemplaza el controlador durante Login o una captura offline.
+    // La versión nueva queda en espera hasta cerrar la instancia actual.
+    // Así no sustituye el controlador durante Login o una captura offline.
   })());
 });
 
 self.addEventListener('activate',event=>{
   event.waitUntil((async()=>{
     const keys=await caches.keys();
-    await Promise.all(keys.filter(key=>key.startsWith(CACHE_PREFIX)&&key!==CACHE_NAME).map(key=>caches.delete(key)));
+    await Promise.all(
+      keys
+        .filter(key=>key.startsWith(CACHE_PREFIX)&&key!==CACHE_NAME)
+        .map(key=>caches.delete(key)),
+    );
     await self.clients.claim();
   })());
 });
@@ -41,11 +47,9 @@ async function networkFirst(request,options={}){
     await cache.put(request,response.clone());
     return response;
   }catch(error){
-    const exact=await cache.match(request);
+    // Coincidencia exacta: nunca mezclar documentos RSC, consultas o rutas de otro estado.
+    const exact=await cache.match(request,{ignoreSearch:false});
     if(exact)return exact;
-    const url=new URL(request.url);
-    const byPath=await cache.match(url.pathname);
-    if(byPath)return byPath;
     if(request.mode==='navigate'){
       const offline=await cache.match('/offline.html');
       if(offline)return offline;
@@ -54,18 +58,9 @@ async function networkFirst(request,options={}){
   }
 }
 
-async function cacheFirst(request){
-  const cache=await caches.open(CACHE_NAME);
-  const cached=await cache.match(request);
-  if(cached)return cached;
-  const response=await fetch(request);
-  if(response.ok)await cache.put(request,response.clone());
-  return response;
-}
-
 async function staleWhileRevalidate(request){
   const cache=await caches.open(CACHE_NAME);
-  const cached=await cache.match(request);
+  const cached=await cache.match(request,{ignoreSearch:false});
   const network=fetch(request).then(async response=>{
     if(response.ok)await cache.put(request,response.clone());
     return response;
@@ -86,13 +81,11 @@ self.addEventListener('fetch',event=>{
   if(url.pathname.startsWith('/api/')||url.pathname==='/build-version.txt')return;
 
   if(request.mode==='navigate'){
-    // Do not wait indefinitely on unstable mobile links before falling back to the local shell.
     event.respondWith(networkFirst(request));
     return;
   }
   if(url.pathname.startsWith('/_next/static/')){
-    // En línea se revalida el chunk saltando la caché HTTP. Si la conexión falla,
-    // se conserva el chunk verificado de Cache Storage para operación offline.
+    // Revalidar siempre el chunk. El fallback sólo puede pertenecer a este commit.
     event.respondWith(networkFirst(request,{reload:true}));
     return;
   }
