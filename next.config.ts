@@ -5,25 +5,47 @@ const noDocumentCache=[
   {key:'Pragma',value:'no-cache'},
   {key:'Expires',value:'0'},
 ];
+
+// Mantener aquí las entradas HTML/RSC de la aplicación. Los assets con hash de
+// /_next/static conservan su caché inmutable; los documentos siempre se revalidan.
 const freshEntryDocuments=[
   '/',
+  '/login',
   '/dashboard',
+  '/admin-menu',
   '/control-center',
   '/collections',
   '/route',
+  '/route/close',
+  '/route/map',
+  '/route/navigate',
   '/sales',
   '/sales/new',
+  '/sales/:path*',
   '/clients',
   '/clients/new',
+  '/clients/:path*',
   '/cash',
   '/inventory',
+  '/inventory/catalogs',
+  '/inventory/counts',
+  '/inventory/operations',
   '/products',
+  '/orders',
+  '/portfolio',
+  '/reports',
   '/renewals',
   '/commissions',
   '/authorizations',
   '/audit',
+  '/notifications',
+  '/sync',
   '/settings',
   '/settings/users',
+  '/settings/password',
+  '/settings/password-links',
+  '/set-password',
+  '/supervision/down-payments',
   '/access-unavailable',
   '/diagnostics-transition',
 ];
@@ -52,26 +74,23 @@ const nextConfig: NextConfig = {
         ],
       },
       ...freshEntryDocuments.map(source=>({source,headers:noDocumentCache})),
-      // El marcador de versión es la autoridad para comprobar coherencia del bundle.
       {source:'/build-version.txt',headers:noDocumentCache},
+      {source:'/sw.js',headers:noDocumentCache},
     ];
   },
-  // Allow access to remote image placeholder.
   images: {
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'picsum.photos',
         port: '',
-        pathname: '/**', // This allows any path under the hostname
+        pathname: '/**',
       },
     ],
   },
   output: 'standalone',
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
-    // HMR is disabled in AI Studio via DISABLE_HMR env var.
-    // Do not modify—file watching is disabled to prevent flickering during agent edits.
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {
         ignored: /.*/,

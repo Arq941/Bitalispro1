@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   production-build-readiness:
@@ -17,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -44,4 +46,6 @@ jobs:
         run: |
           test -d .next || (echo '.next directory missing' && exit 1)
           test -f .next/BUILD_ID || (echo '.next/BUILD_ID missing' && exit 1)
+          test -d .next/standalone/.next/static || (echo 'standalone static assets missing' && exit 1)
+          test -f .next/standalone/public/sw.js || (echo 'versioned service worker missing' && exit 1)
           echo "PRODUCTION_BUILD_READY $(cat .next/BUILD_ID)"

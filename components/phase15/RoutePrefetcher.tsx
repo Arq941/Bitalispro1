@@ -13,27 +13,51 @@ const routesByRole:Record<string,string[]>={
   COBRADOR:['/route','/collections','/clients','/cash','/commissions','/route/map','/route/navigate'],
 };
 
+type NetworkInformation={
+  effectiveType?:string;
+  saveData?:boolean;
+};
+
 export default function RoutePrefetcher(){
   const router=useRouter();
   const pathname=usePathname();
   const publicPath=pathname==='/'||pathname==='/login';
+
   useEffect(()=>{
     if(publicPath)return;
     let cancelled=false;
+
+    const canPrefetch=()=>{
+      if(!navigator.onLine||document.visibilityState!=='visible')return false;
+      const connection=(navigator as Navigator&{connection?:NetworkInformation}).connection;
+      if(connection?.saveData)return false;
+      return connection?.effectiveType!=='slow-2g'&&connection?.effectiveType!=='2g';
+    };
+
     const prefetch=()=>{
-      if(cancelled)return;
+      if(cancelled||!canPrefetch())return;
       try{
         const raw=localStorage.getItem('bitalis_auth_user');
         if(!raw)return;
         const user=JSON.parse(raw);
         const role=String(user?.role||'').toUpperCase();
-        const routes=[...common,...(routesByRole[role]||[])];
+        // Sólo anticipar las siguientes acciones más probables. El resto carga bajo demanda.
+        const routes=[...common,...(routesByRole[role]||[]).slice(0,3)];
         for(const route of new Set(routes))router.prefetch(route);
       }catch{}
     };
-    const id=window.setTimeout(prefetch,450);
+
+    // Esperar a que la pantalla actual y sus datos críticos hayan terminado.
+    const id=window.setTimeout(prefetch,2500);
     window.addEventListener('bitalis:permissions-changed',prefetch);
-    return()=>{cancelled=true;window.clearTimeout(id);window.removeEventListener('bitalis:permissions-changed',prefetch);};
+    window.addEventListener('online',prefetch);
+    return()=>{
+      cancelled=true;
+      window.clearTimeout(id);
+      window.removeEventListener('bitalis:permissions-changed',prefetch);
+      window.removeEventListener('online',prefetch);
+    };
   },[router,publicPath,pathname]);
+
   return null;
 }
