@@ -30,7 +30,7 @@ const deliveryGuard = String.raw`(()=>{
       history.replaceState(history.state,'',url.pathname+url.search+url.hash);
     }catch{}
   };
-  const recoveryUrl=()=>'/__bitalis/recover?return='+encodeURIComponent(location.pathname+location.search+location.hash)+'&ts='+Date.now();
+  const recoveryUrl=()=>'/api/system/recover?return='+encodeURIComponent(location.pathname+location.search+location.hash)+'&ts='+Date.now();
   const isNextAsset=(value)=>String(value||'').includes('/_next/');
   const isDeliveryError=(value)=>{
     const text=String(value||'').toLowerCase();
