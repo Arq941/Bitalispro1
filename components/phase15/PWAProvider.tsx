@@ -2,16 +2,21 @@
 
 import {ReactNode,useEffect} from 'react';
 import SyncManager from '@/components/phase15/SyncManager';
-import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
+import {BITALIS_BUILD_AT,BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
-const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v4:${BITALIS_BUILD_COMMIT}`;
+const CLIENT_BUILD_ID=`${BITALIS_BUILD_COMMIT}@${BITALIS_BUILD_AT}`;
+const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v5:${CLIENT_BUILD_ID}`;
+const REGISTERED_KEY=`bitalis_pwa_registered:${CLIENT_BUILD_ID}`;
 const LAST_MISMATCH_KEY='bitalis:last-build-mismatch';
 const permissionCacheKey='bitalis_effective_permissions';
 
-function parseCommit(text:string){
-  return text.match(/^commit=(.+)$/m)?.[1]?.trim()||'';
+function parseBuild(text:string){
+  return {
+    commit:text.match(/^commit=(.+)$/m)?.[1]?.trim()||'',
+    builtAt:text.match(/^built_at=(.+)$/m)?.[1]?.trim()||'',
+  };
 }
 
 async function clearBrowserDeliveryState(allCaches=false){
@@ -31,13 +36,21 @@ async function clearBrowserDeliveryState(allCaches=false){
 async function registerOfflineWorker(){
   if(!('serviceWorker' in navigator))return;
   try{
+    if(sessionStorage.getItem(REGISTERED_KEY)==='done'){
+      traceAuthTransition('pwa-offline-worker-session-reused');
+      return;
+    }
+    const existing=await navigator.serviceWorker.getRegistration('/');
+    if(existing?.active&&!existing.waiting){
+      sessionStorage.setItem(REGISTERED_KEY,'done');
+      traceAuthTransition('pwa-offline-worker-active-reused',{scope:existing.scope});
+      return;
+    }
     const registration=await navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});
+    sessionStorage.setItem(REGISTERED_KEY,'done');
     traceAuthTransition('pwa-offline-worker-registered',{scope:registration.scope});
     if(registration.waiting)traceAuthTransition('pwa-update-waiting',{scope:registration.scope});
     registration.addEventListener('updatefound',()=>traceAuthTransition('pwa-update-found',{scope:registration.scope}));
-    // No se llama update() durante Login: Android WebView puede cambiar el
-    // controlador y descargar el documento activo. El navegador comprobará
-    // la actualización en el siguiente arranque estable.
   }catch(error){
     traceAuthTransition('pwa-offline-worker-error',{error:error instanceof Error?error.name:'unknown'});
     console.warn('No fue posible activar el modo offline de BITALIS:',error);
@@ -53,26 +66,39 @@ export default function PWAProvider({children}:{children:ReactNode}){
         const response=await fetch(`/build-version.txt?ts=${Date.now()}`,{cache:'no-store',headers:{'Cache-Control':'no-store'}});
         if(!response.ok)throw new Error(`BUILD_VERSION_${response.status}`);
         const serverText=await response.text();
-        const serverCommit=parseCommit(serverText);
+        const serverBuild=parseBuild(serverText);
         const clientCommit=String(BITALIS_BUILD_COMMIT||'').trim();
-        const clientKnown=!!clientCommit&&!['development','unknown'].includes(clientCommit);
-        const serverKnown=!!serverCommit&&serverCommit!=='unknown';
-        const matches=!clientKnown||!serverKnown||clientCommit===serverCommit;
-        traceAuthTransition('build-version-check',{client:clientCommit.slice(0,12)||'unknown',server:serverCommit.slice(0,12)||'unknown',matches});
+        const clientBuiltAt=String(BITALIS_BUILD_AT||'').trim();
+        const clientKnown=!!clientCommit&&!['development','unknown'].includes(clientCommit)&&!!clientBuiltAt&&clientBuiltAt!=='development';
+        const serverKnown=!!serverBuild.commit&&serverBuild.commit!=='unknown'&&!!serverBuild.builtAt;
+        const matches=!clientKnown||!serverKnown||(clientCommit===serverBuild.commit&&clientBuiltAt===serverBuild.builtAt);
+        traceAuthTransition('build-version-check',{
+          client:clientCommit.slice(0,12)||'unknown',
+          server:serverBuild.commit.slice(0,12)||'unknown',
+          clientBuiltAt,
+          serverBuiltAt:serverBuild.builtAt,
+          matches,
+        });
         if(disposed)return false;
 
-        if(clientKnown&&serverKnown&&clientCommit!==serverCommit){
-          try{localStorage.setItem(LAST_MISMATCH_KEY,JSON.stringify({at:new Date().toISOString(),client:clientCommit,server:serverCommit,path:location.pathname}));}catch{}
-          traceAuthTransition('build-version-mismatch',{client:clientCommit.slice(0,12),server:serverCommit.slice(0,12)});
+        if(clientKnown&&serverKnown&&!matches){
+          try{localStorage.setItem(LAST_MISMATCH_KEY,JSON.stringify({
+            at:new Date().toISOString(),
+            client:CLIENT_BUILD_ID,
+            server:`${serverBuild.commit}@${serverBuild.builtAt}`,
+            path:location.pathname,
+          }));}catch{}
+          traceAuthTransition('build-version-mismatch',{
+            client:clientCommit.slice(0,12),
+            server:serverBuild.commit.slice(0,12),
+            clientBuiltAt,
+            serverBuiltAt:serverBuild.builtAt,
+          });
           await clearBrowserDeliveryState(true);
           if(disposed)return false;
-          const url=new URL(location.href);
-          const recovery=serverCommit.slice(0,12);
-          if(url.searchParams.get('__bitalis_build')!==recovery){
-            url.searchParams.set('__bitalis_build',recovery);
-            traceAuthTransition('build-version-reload',{server:recovery});
-            location.replace(`${url.pathname}${url.search}${url.hash}`);
-          }
+          const returnTo=`${location.pathname}${location.search}${location.hash}`;
+          traceAuthTransition('build-version-reload',{server:serverBuild.commit.slice(0,12),serverBuiltAt:serverBuild.builtAt});
+          location.replace(`/api/system/recover?return=${encodeURIComponent(returnTo)}&build=${encodeURIComponent(serverBuild.builtAt)}`);
           return false;
         }
 
