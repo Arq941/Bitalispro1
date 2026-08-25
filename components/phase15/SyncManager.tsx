@@ -1,6 +1,6 @@
 'use client';
 
-import {useCallback,useEffect,useMemo,useState} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {AlertTriangle,CheckCircle2,CloudUpload,Loader2,RefreshCw,ShieldCheck,WifiOff,X} from 'lucide-react';
 import {offlineStorage,OfflineOperation} from '@/lib/offline-storage';
 import {installOfflineAutoSync,offlineIdentity,syncOfflineQueue} from '@/lib/offline-sync-client';
@@ -36,6 +36,7 @@ export default function SyncManager(){
   const[open,setOpen]=useState(false);
   const[online,setOnline]=useState(true);
   const[feedback,setFeedback]=useState<string|null>(null);
+  const activeSync=useRef(false);
 
   const load=useCallback(async()=>{
     setOnline(typeof navigator!=='undefined'?navigator.onLine:true);
@@ -50,8 +51,8 @@ export default function SyncManager(){
   },[]);
 
   const sync=useCallback(async()=>{
-    if(syncing||typeof navigator==='undefined'||!navigator.onLine)return;
-    setSyncing(true);setFeedback('Sincronizando capturas protegidas…');
+    if(activeSync.current||typeof navigator==='undefined'||!navigator.onLine)return;
+    activeSync.current=true;setSyncing(true);setFeedback('Sincronizando capturas protegidas…');
     try{
       await syncOfflineQueue();
       await syncQueuedOperations();
@@ -60,8 +61,8 @@ export default function SyncManager(){
     }catch{
       await load();
       setFeedback('La conexión se interrumpió. La información continúa protegida y pendiente.');
-    }finally{setSyncing(false);}
-  },[load,syncing]);
+    }finally{activeSync.current=false;setSyncing(false);}
+  },[load]);
 
   useEffect(()=>{
     const refresh=()=>void load();
