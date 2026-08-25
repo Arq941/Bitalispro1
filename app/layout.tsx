@@ -146,7 +146,6 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <script dangerouslySetInnerHTML={{__html:deliveryGuard}} />
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossOrigin="" />
-        <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css" />
       </head>
       <body className="bitalis-app-shell min-h-screen overflow-x-hidden antialiased" suppressHydrationWarning>
         <PWAProvider><AuthTransitionDiagnostics/><ImageLightboxProvider><RoutePrefetcher/><AppShell>{children}</AppShell></ImageLightboxProvider></PWAProvider>

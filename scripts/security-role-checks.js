@@ -196,5 +196,9 @@ assert(offlineRoute.includes("permissionByType") && offlineRoute.includes("Permi
   'queued offline mutations must be reauthorized with current permissions at sync time');
 assert(serviceWorker.includes('NAVIGATION_TIMEOUT_MS=3500') && serviceWorker.includes('fetchWithTimeout'),
   'offline navigation must fall back promptly on unstable mobile connections');
+assert(!serviceWorker.includes('self.skipWaiting()') && !read('components/phase15/PWAProvider.tsx').includes('void registration.update()'),
+  'PWA updates must never replace the active Android document during login');
+assert(!read('app/layout.tsx').includes('api.mapbox.com/mapbox-gl-js'),
+  'Mapbox CSS must be bundled once and not loaded again from an external CDN');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');

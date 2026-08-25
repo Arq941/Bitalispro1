@@ -1,5 +1,5 @@
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v3`;
+const CACHE_NAME=`${CACHE_PREFIX}v4`;
 const NAVIGATION_TIMEOUT_MS=3500;
 const CORE=[
   '/','/dashboard','/route','/route/close','/collections','/portfolio','/clients','/clients/new','/products','/inventory','/cash','/notifications','/settings','/sync',
@@ -13,7 +13,8 @@ self.addEventListener('install',event=>{
       const response=await fetch(url,{cache:'reload',credentials:'same-origin'});
       if(response.ok)await cache.put(url,response);
     }));
-    await self.skipWaiting();
+    // La versión nueva queda en espera y se activa al cerrar la instancia actual.
+    // Así nunca reemplaza el controlador durante Login o una captura offline.
   })());
 });
 
