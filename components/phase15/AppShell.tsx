@@ -60,7 +60,7 @@ function NestedShell({children,title}:{children:ReactNode;title?:string}){
 function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitle?:string}){
  const router=useRouter(),pathname=usePathname();
  const publicPath=isPublicPath(pathname);
- const shellRef=useRef<HTMLDivElement|null>(null),swipeStart=useRef<SwipeStart>(null),swipeConsumedUntil=useRef(0),lastNavIndex=useRef(0);
+ const shellRef=useRef<HTMLDivElement|null>(null),swipeStart=useRef<SwipeStart>(null),swipeConsumedUntil=useRef(0),lastNavIndex=useRef(0),notificationSnapshot=useRef<{ready:boolean;count:number}>({ready:false,count:0});
  const[user,setUser]=useState<User|null>(null),[accountOpen,setAccountOpen]=useState(false),[loggingOut,setLoggingOut]=useState(false),[permissions,setPermissions]=useState<Set<string>|null>(null),[hydrated,setHydrated]=useState(false),[shellTitle,setShellTitle]=useState(initialTitle||titleForPath(pathname)),[unreadCount,setUnreadCount]=useState(0),[online,setOnline]=useState(true);
 
  const primeAuthenticatedSession=useCallback((nextUser:User,permissionCodes:string[]|null)=>{
@@ -143,6 +143,17 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
     const json:any=await apiClient('/api/notifications/unread',{timeoutMs:8000});
     const raw=Array.isArray(json?.data)?json.data.length:Array.isArray(json?.notifications)?json.notifications.length:Number(json?.count??json?.unread??0);
     const count=Number.isFinite(raw)?Math.max(0,Number(raw)):0;
+    const previous=notificationSnapshot.current;
+    if(previous.ready&&count>previous.count){
+      const newest=Array.isArray(json?.data)?json.data[0]:Array.isArray(json?.notifications)?json.notifications[0]:null;
+      const priority=String(newest?.priority||newest?.severity||newest?.level||'').toUpperCase();
+      const high=['HIGH','CRITICAL','URGENT','ALTA'].includes(priority);
+      const title=String(newest?.title||newest?.subject||(high?'Alerta prioritaria de BITALIS':'Nueva notificación de BITALIS'));
+      const body=String(newest?.message||newest?.body||'Tienes una nueva notificación pendiente.');
+      try{(window as any).BitalisNotifications?.notify(title,body,high);}catch{}
+      if(navigator.vibrate)navigator.vibrate(high?[350,160,350,160,600]:[180,120,180]);
+    }
+    notificationSnapshot.current={ready:true,count};
     if(alive)setUnreadCount(count);
    }catch{}
   };
