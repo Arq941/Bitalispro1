@@ -60,15 +60,19 @@ const NAVIGABLE_PERMISSION_CODES = new Set<string>([
   'settings.manage',
 ]);
 
+const ADMIN_EXCLUSIVE_PERMISSION_CODES = new Set<string>([
+  'inventory.view', 'inventory.manage', 'audit.view', 'users.manage', 'settings.manage',
+]);
+
 const SECURE_ROLE_DEFAULTS: Record<string, readonly string[]> = {
   ADMIN: LEGACY_PERMISSION_CODES,
   SUPERVISORA: [
-    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit',
+    'dashboard.view', 'clients.view', 'clients.create', 'clients.edit', 'clients.delete',
     'sales.view', 'sales.create', 'sales.approve',
     'collections.view', 'route.view', 'route.manage',
     'cash.view', 'cash.operate', 'cash.close',
-    'inventory.view', 'renewals.view', 'renewals.manage',
-    'commissions.view', 'reports.view', 'audit.view',
+    'renewals.view', 'renewals.manage',
+    'commissions.view', 'reports.view',
   ],
   VENDEDORA: [
     'clients.create',
@@ -263,6 +267,9 @@ export class PermissionService {
       if (override.effect === 'DENY') inherited.delete(override.permission_code);
       if (override.effect === 'ALLOW') inherited.add(override.permission_code);
     }
+    if (!roleNames.includes('ADMIN')) {
+      for (const code of ADMIN_EXCLUSIVE_PERMISSION_CODES) inherited.delete(code);
+    }
     if (this.isFieldSeller(roleNames)) {
       const intakeDenied = overrides.some((override) => override.permission_code === 'clients.create' && override.effect === 'DENY');
       return intakeDenied ? [] : ['clients.create'];
@@ -276,6 +283,7 @@ export class PermissionService {
 
     const context = await this.getPermissionContext(userId);
     if (context.roleNames.includes('ADMIN')) return (LEGACY_PERMISSION_CODES as readonly string[]).includes(code);
+    if (ADMIN_EXCLUSIVE_PERMISSION_CODES.has(code)) return false;
     if (this.isFieldSeller(context.roleNames) && code !== 'clients.create') return false;
 
     const overrides = await this.getUserOverrides(userId);
