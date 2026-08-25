@@ -10,6 +10,7 @@ const PUBLIC_API=[
   '/api/health/live',
   '/api/health/ready',
   '/api/system/version',
+  '/api/system/recover',
 ];
 
 const SUPERVISION_PREFIXES=[
