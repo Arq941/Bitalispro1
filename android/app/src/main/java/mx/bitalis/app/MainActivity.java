@@ -3,6 +3,9 @@ package mx.bitalis.app;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -12,11 +15,13 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Parcelable;
 import android.provider.MediaStore;
 import android.view.Window;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -48,6 +53,7 @@ public class MainActivity extends Activity {
     private static final int REQ_LOCATION = 2101;
     private static final int REQ_CAMERA = 2102;
     private static final int REQ_FILE_CHOOSER = 3101;
+    private static final int REQ_NOTIFICATIONS = 4101;
 
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
@@ -72,6 +78,7 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.WHITE);
         setContentView(webView);
         configureWebView();
+        requestNotificationPermissionIfNeeded();
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
@@ -99,6 +106,7 @@ public class MainActivity extends Activity {
         settings.setSupportMultipleWindows(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setUserAgentString(settings.getUserAgentString() + " BITALIS-Android/" + getVersionName());
+        webView.addJavascriptInterface(new NotificationBridge(), "BitalisNotifications");
 
         WebView.setWebContentsDebuggingEnabled(false);
         CookieManager cookieManager = CookieManager.getInstance();
@@ -181,6 +189,46 @@ public class MainActivity extends Activity {
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> openExternal(Uri.parse(url)));
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
+    }
+
+    private final class NotificationBridge {
+        @JavascriptInterface
+        public void notify(String title, String body, boolean highPriority) {
+            runOnUiThread(() -> showNativeNotification(title, body, highPriority));
+        }
+    }
+
+    private void showNativeNotification(String title, String body, boolean highPriority) {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) return;
+
+        Intent openIntent = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String channel = highPriority ? "bitalis_urgent" : "bitalis_operational";
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, channel)
+                : new Notification.Builder(this);
+        builder.setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title == null || title.trim().isEmpty() ? "BITALIS" : title)
+                .setContentText(body == null ? "" : body)
+                .setStyle(new Notification.BigTextStyle().bigText(body == null ? "" : body))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setCategory(highPriority ? Notification.CATEGORY_ALARM : Notification.CATEGORY_MESSAGE)
+                .setPriority(highPriority ? Notification.PRIORITY_MAX : Notification.PRIORITY_DEFAULT);
+        manager.notify((int) (System.currentTimeMillis() & 0x7fffffff), builder.build());
     }
 
     private void checkForAppUpdate() {
