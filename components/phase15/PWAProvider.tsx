@@ -6,7 +6,8 @@ import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
-const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v4:${BITALIS_BUILD_COMMIT}`;
+const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v5:${BITALIS_BUILD_COMMIT}`;
+const REGISTERED_KEY=`bitalis_pwa_registered:${BITALIS_BUILD_COMMIT}`;
 const LAST_MISMATCH_KEY='bitalis:last-build-mismatch';
 const permissionCacheKey='bitalis_effective_permissions';
 
@@ -31,13 +32,21 @@ async function clearBrowserDeliveryState(allCaches=false){
 async function registerOfflineWorker(){
   if(!('serviceWorker' in navigator))return;
   try{
+    if(sessionStorage.getItem(REGISTERED_KEY)==='done'){
+      traceAuthTransition('pwa-offline-worker-session-reused');
+      return;
+    }
+    const existing=await navigator.serviceWorker.getRegistration('/');
+    if(existing?.active&&!existing.waiting){
+      sessionStorage.setItem(REGISTERED_KEY,'done');
+      traceAuthTransition('pwa-offline-worker-active-reused',{scope:existing.scope});
+      return;
+    }
     const registration=await navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});
+    sessionStorage.setItem(REGISTERED_KEY,'done');
     traceAuthTransition('pwa-offline-worker-registered',{scope:registration.scope});
     if(registration.waiting)traceAuthTransition('pwa-update-waiting',{scope:registration.scope});
     registration.addEventListener('updatefound',()=>traceAuthTransition('pwa-update-found',{scope:registration.scope}));
-    // No se llama update() durante Login: Android WebView puede cambiar el
-    // controlador y descargar el documento activo. El navegador comprobará
-    // la actualización en el siguiente arranque estable.
   }catch(error){
     traceAuthTransition('pwa-offline-worker-error',{error:error instanceof Error?error.name:'unknown'});
     console.warn('No fue posible activar el modo offline de BITALIS:',error);
@@ -66,13 +75,9 @@ export default function PWAProvider({children}:{children:ReactNode}){
           traceAuthTransition('build-version-mismatch',{client:clientCommit.slice(0,12),server:serverCommit.slice(0,12)});
           await clearBrowserDeliveryState(true);
           if(disposed)return false;
-          const url=new URL(location.href);
-          const recovery=serverCommit.slice(0,12);
-          if(url.searchParams.get('__bitalis_build')!==recovery){
-            url.searchParams.set('__bitalis_build',recovery);
-            traceAuthTransition('build-version-reload',{server:recovery});
-            location.replace(`${url.pathname}${url.search}${url.hash}`);
-          }
+          const returnTo=`${location.pathname}${location.search}${location.hash}`;
+          traceAuthTransition('build-version-reload',{server:serverCommit.slice(0,12)});
+          location.replace(`/api/system/recover?return=${encodeURIComponent(returnTo)}&build=${encodeURIComponent(serverCommit)}`);
           return false;
         }
 

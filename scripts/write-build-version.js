@@ -33,7 +33,6 @@ mkdirSync(generatedDir,{recursive:true});
 const generated=[
   '// Generado automáticamente por scripts/write-build-version.js. No editar durante el build.',
   `export const BITALIS_BUILD_COMMIT: string = ${JSON.stringify(commit)};`,
-  `export const BITALIS_BUILD_AT: string = ${JSON.stringify(builtAt)};`,
   '',
 ].join('\n');
 writeFileSync(join(generatedDir,'buildInfo.ts'),generated,'utf8');

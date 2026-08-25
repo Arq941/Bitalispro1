@@ -2,7 +2,7 @@
 
 import {useEffect,useMemo,useState} from 'react';
 import {useRouter} from 'next/navigation';
-import {BITALIS_BUILD_AT,BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
+import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 import {readAuthTransitionTrace} from '@/lib/ux/authTransitionTrace';
 
 type TraceEvent=ReturnType<typeof readAuthTransitionTrace>[number];
@@ -93,7 +93,7 @@ export default function DiagnosticsTransitionPage(){
   const docs=useMemo(()=>new Set(rows.map(row=>row.doc)).size,[rows]);
   const operationalDocs=useMemo(()=>new Set(withoutDiagnosticsDocument(rows).map(row=>row.doc)).size,[rows]);
   const copy=async()=>{
-    const text=`BITALIS DIAGNOSTICO\nCLIENT_BUILD_COMMIT=${BITALIS_BUILD_COMMIT}\nCLIENT_BUILD_AT=${BITALIS_BUILD_AT}\n${build}\n\n${finding}\nULTIMO_DESFASE_BUILD=${lastBuildMismatch}\nULTIMO_ERROR_CLIENTE=${lastClientError}\nEVENTS=${rows.length}\nDOCUMENTS=${docs}\nOPERATIONAL_DOCUMENTS=${operationalDocs}\n\n${trace}`;
+    const text=`BITALIS DIAGNOSTICO\nCLIENT_BUILD_COMMIT=${BITALIS_BUILD_COMMIT}\nCLIENT_BUILD_AT=servido_dinamicamente\n${build}\n\n${finding}\nULTIMO_DESFASE_BUILD=${lastBuildMismatch}\nULTIMO_ERROR_CLIENTE=${lastClientError}\nEVENTS=${rows.length}\nDOCUMENTS=${docs}\nOPERATIONAL_DOCUMENTS=${operationalDocs}\n\n${trace}`;
     try{await navigator.clipboard.writeText(text);setCopied(true);}catch{window.prompt('Copia este diagnóstico:',text);}
   };
 
@@ -110,7 +110,7 @@ export default function DiagnosticsTransitionPage(){
           <button onClick={()=>router.replace('/')} className="col-span-2 min-h-12 rounded-2xl border border-emerald-100 bg-white px-3 text-xs font-black">VOLVER A BITALIS</button>
         </div>
       </section>
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Build JavaScript en ejecución</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">commit={BITALIS_BUILD_COMMIT}{'\n'}built_at={BITALIS_BUILD_AT}</pre></section>
+      <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Build JavaScript en ejecución</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">commit={BITALIS_BUILD_COMMIT}{'\n'}built_at=consultar_build_servido</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Build servido</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{build}</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Último desfase de build</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{lastBuildMismatch}</pre></section>
       <section className="rounded-[28px] border border-slate-200 bg-white p-4"><h2 className="text-sm font-black">Última excepción de cliente</h2><pre className="mt-2 whitespace-pre-wrap break-words rounded-2xl bg-slate-950 p-3 text-[10px] leading-5 text-emerald-100">{lastClientError}</pre></section>
