@@ -1,5 +1,6 @@
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v2`;
+const CACHE_NAME=`${CACHE_PREFIX}v3`;
+const NAVIGATION_TIMEOUT_MS=3500;
 const CORE=[
   '/','/dashboard','/route','/route/close','/collections','/portfolio','/clients','/clients/new','/products','/inventory','/cash','/notifications','/settings','/sync',
   '/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'
@@ -24,10 +25,16 @@ self.addEventListener('activate',event=>{
   })());
 });
 
+async function fetchWithTimeout(request,timeoutMs){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{return await fetch(request,{signal:controller.signal});}finally{clearTimeout(timer);}
+}
+
 async function networkFirst(request){
   const cache=await caches.open(CACHE_NAME);
   try{
-    const response=await fetch(request);
+    const response=await fetchWithTimeout(request,request.mode==='navigate'?NAVIGATION_TIMEOUT_MS:8000);
     if(response.ok)await cache.put(request,response.clone());
     return response;
   }catch(error){
@@ -76,6 +83,7 @@ self.addEventListener('fetch',event=>{
   if(url.pathname.startsWith('/api/')||url.pathname==='/build-version.txt')return;
 
   if(request.mode==='navigate'){
+    // Do not wait indefinitely on unstable mobile links before falling back to the local shell.
     event.respondWith(networkFirst(request));
     return;
   }

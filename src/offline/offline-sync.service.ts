@@ -1,6 +1,8 @@
 import { prisma } from '@/src/database/prisma.service';
 import Decimal from 'decimal.js';
 import crypto from 'crypto';
+import { FinancialRulesService } from '@/src/financial/financial-rules.service';
+import { PaymentCalendarService } from '@/src/financial/payment-calendar.service';
 
 export interface SyncOperationPayload {
   idempotencyKey: string;
@@ -249,35 +251,35 @@ export class OfflineSyncService {
         return await this.processPromiseOperation(deviceId, userId, idempotencyKey, op.payload, clientCapturedAt, serverReceivedAt, payloadHash);
       } else if (op.operationType === 'EXPENSE') {
         return await this.processExpenseOperation(deviceId, userId, idempotencyKey, op.payload, clientCapturedAt, serverReceivedAt, payloadHash);
+      } else if (op.operationType === 'SALE') {
+        return await this.processSaleOperation(deviceId, userId, idempotencyKey, op.payload, clientCapturedAt, serverReceivedAt, payloadHash);
       } else if (op.operationType === 'GPS_TRACE') {
         return await this.processGpsTraceOperation(deviceId, userId, idempotencyKey, op.payload, clientCapturedAt, serverReceivedAt, payloadHash);
       } else {
-        // Generic fallback for custom synced entity
+        // Never acknowledge an operation whose domain mutation was not executed.
         await prisma.syncOperation.upsert({
           where: { idempotencyKey },
           create: {
-            idempotencyKey,
-            deviceId,
-            userId,
-            operationType: op.operationType,
-            clientCapturedAt,
-            serverReceivedAt,
-            status: 'SYNCED',
-            payload: JSON.stringify(op.payload),
-            payloadHash,
+            idempotencyKey, deviceId, userId, operationType: op.operationType,
+            clientCapturedAt, serverReceivedAt, status: 'REJECTED',
+            payload: JSON.stringify(op.payload), payloadHash,
+            errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+            errorMessage: 'Esta operación todavía no tiene un procesador offline seguro.',
           },
           update: {
-            status: 'SYNCED',
-            serverReceivedAt,
+            status: 'REJECTED',
+            errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+            errorMessage: 'Esta operación todavía no tiene un procesador offline seguro.',
           },
         });
-
         return {
           idempotencyKey,
-          status: 'SYNCED',
-          data: { success: true },
+          status: 'REJECTED',
+          errorCode: 'OFFLINE_HANDLER_NOT_IMPLEMENTED',
+          errorMessage: 'La operación no fue aplicada ni confirmada.',
           serverReceivedAt: serverReceivedAt.toISOString(),
         };
+
       }
     } catch (err: any) {
       const errorMessage = err?.message || 'Error durante la sincronización de la operación';
@@ -833,6 +835,90 @@ export class OfflineSyncService {
         serverReceivedAt: serverReceivedAt.toISOString(),
       } as SyncOperationResult;
     });
+  }
+
+  /**
+   * Create sale, stock reservations, down payment, credit, calendar, commission,
+   * audit and sync acknowledgement in one database transaction.
+   */
+  private static async processSaleOperation(
+    deviceId:string,userId:string,idempotencyKey:string,payload:any,
+    clientCapturedAt:Date,serverReceivedAt:Date,payloadHash:string
+  ):Promise<SyncOperationResult>{
+    const items=Array.isArray(payload?.items)?payload.items:[];
+    if(!payload?.clientId||items.length<1||items.length>2)throw new Error('La venta requiere cliente y uno o dos productos.');
+    const saleType=payload.saleType==='CASH'?'CASH':'CREDIT';
+    const warehouseId=String(payload.warehouseId||'wh_central');
+    const frequency=String(payload.paymentFrequency||'WEEKLY');
+    const firstPaymentDate=new Date(payload.firstPaymentDate||Date.now()+7*86400000);
+    if(!Number.isFinite(firstPaymentDate.getTime()))throw new Error('Primera fecha de cobro inválida.');
+    const installmentRequest=Math.max(1,Number(payload.installmentsCount||10));
+    return prisma.$transaction(async(tx:any)=>{
+      const duplicate=await tx.sale.findUnique({where:{idempotencyKey},include:{items:true,credits:{include:{schedules:true}},downPayment:true,companyContribution:true}});
+      if(duplicate)return{idempotencyKey,status:'DUPLICATE',duplicate:true,originalOperation:true,data:duplicate,serverReceivedAt:serverReceivedAt.toISOString()} as SyncOperationResult;
+      const client=await tx.client.findUnique({where:{id:String(payload.clientId)},select:{id:true}});
+      if(!client)throw new Error('Cliente no encontrado.');
+      let subtotal=new Decimal(0),totalList=new Decimal(0),requiresAuthorization=items.length===2;
+      const reasons:string[]=items.length===2?['TWO_PRODUCT_SALE']:[];
+      const normalized=items.map((raw:any,index:number)=>{
+        const quantity=Math.trunc(Number(raw.quantity||1));
+        if(!raw.productId||quantity<1)throw new Error('Producto o cantidad inválida.');
+        const unitPrice=new Decimal(raw.unitPrice||raw.negotiatedPrice||0);
+        const negotiatedPrice=new Decimal(raw.negotiatedPrice||raw.unitPrice||0);
+        const minimum=new Decimal(raw.minimumAuthorizedPrice||unitPrice);
+        if(unitPrice.lte(0)||negotiatedPrice.lte(0))throw new Error('El precio debe ser mayor a cero.');
+        if(negotiatedPrice.lt(minimum)){requiresAuthorization=true;reasons.push('PRICE_OVERRIDE_ITEM_'+(index+1));}
+        subtotal=subtotal.plus(negotiatedPrice.mul(quantity));totalList=totalList.plus(unitPrice.mul(quantity));
+        return{productId:String(raw.productId),quantity,unitPrice,negotiatedPrice,minimum,
+          subtotal:negotiatedPrice.mul(quantity),discount:unitPrice.minus(negotiatedPrice).mul(quantity)};
+      });
+      const enganche=new Decimal(saleType==='CREDIT'?payload.engancheCliente||0:0);
+      const aporte=FinancialRulesService.calcularAporteEmpresa(enganche);
+      const financial=FinancialRulesService.calcularSaldoFinanciado({precioLista:subtotal,engancheCliente:enganche,aporteEmpresa:aporte});
+      if(!financial.esInvarianteValida)throw new Error('La venta no cumple las reglas financieras.');
+      const saleId=crypto.randomUUID(),year=new Date().getFullYear();
+      const count=await tx.sale.count({where:{saleNumber:{startsWith:'VTA-'+year+'-'}}});
+      const saleNumber='VTA-'+year+'-'+String(count+1).padStart(4,'0');
+      for(const item of normalized){
+        const changed=await tx.inventoryStock.updateMany({where:{warehouseId,productId:item.productId,quantityAvailable:{gte:item.quantity}},
+          data:{quantityReserved:{increment:item.quantity},quantityAvailable:{decrement:item.quantity}}});
+        if(changed.count!==1)throw new Error('Inventario insuficiente para '+item.productId);
+      }
+      const sale=await tx.sale.create({data:{id:saleId,saleNumber,clientId:client.id,sellerId:userId,saleType,
+        status:requiresAuthorization?'PENDING_AUTHORIZATION':'APPROVED',subtotal,totalListPrice:totalList,
+        totalDiscount:financial.descuentoComercialTotal,totalFinanced:financial.saldoFinanciado,totalAmount:financial.saldoFinanciado,idempotencyKey,
+        items:{create:normalized.map((x:any)=>({id:crypto.randomUUID(),productId:x.productId,quantity:x.quantity,unitPrice:x.unitPrice,
+          subtotal:x.subtotal,minimumAuthorizedPrice:x.minimum,negotiatedPrice:x.negotiatedPrice,discount:x.discount,financedAmount:x.subtotal,total:x.subtotal}))}},
+        include:{items:true}});
+      for(const item of normalized)await tx.inventoryReservation.create({data:{id:crypto.randomUUID(),warehouseId,productId:item.productId,
+        saleId,quantity:item.quantity,status:'ACTIVE',expiresAt:new Date(serverReceivedAt.getTime()+48*3600000),createdBy:userId}});
+      if(requiresAuthorization)for(const reason of reasons)await tx.authorizationRequest.create({data:{type:reason.startsWith('PRICE')?'PRICE_OVERRIDE':'TWO_PRODUCT_SALE',
+        status:'PENDING',requestedBy:userId,saleId,reason}});
+      let downPayment=null,companyContribution=null,credit=null;
+      if(enganche.gt(0)){
+        downPayment=await tx.saleDownPayment.create({data:{id:crypto.randomUUID(),saleId,amount:enganche,paymentMethod:'CASH',status:'COMPLETED',createdBy:userId}});
+        companyContribution=await tx.companyContribution.create({data:{id:crypto.randomUUID(),saleId,amount:aporte,rule:'MATCH_DOWN_PAYMENT_UP_TO_200',
+          percentageOrRatio:enganche.gt(0)?aporte.div(enganche):0,createdBy:userId}});
+      }
+      if(saleType==='CREDIT'&&!requiresAuthorization){
+        const calendar=PaymentCalendarService.buildWholeAmounts({balance:financial.saldoFinanciado,requestedInstallments:installmentRequest,frequency:frequency as any});
+        const creditId=crypto.randomUUID(),step=frequency==='BIWEEKLY'?14:frequency==='MONTHLY'?30:7;
+        credit=await tx.credit.create({data:{id:creditId,saleId,clientId:client.id,principalAmount:subtotal,engancheCliente:enganche,aporteEmpresa:aporte,
+          saldoActual:financial.saldoFinanciado,paymentFrequency:frequency,suggestedInstallment:calendar.regularAmount,status:'ACTIVE',
+          schedules:{create:calendar.amounts.map((amount:any,index:number)=>{const date=new Date(firstPaymentDate.getTime()+index*step*86400000);return{
+            id:crypto.randomUUID(),installmentNumber:index+1,scheduledDate:date,originalScheduledDate:date,suggestedAmount:amount,status:'PENDING'};})}},
+          include:{schedules:true}});
+        await tx.commission.create({data:{id:crypto.randomUUID(),employeeId:userId,role:'VENDEDORA',commissionType:'SALE_COMMISSION',
+          saleId,creditId,baseAmount:financial.saldoFinanciado,rate:new Decimal('0.03'),commissionAmount:financial.saldoFinanciado.mul('0.03').toDecimalPlaces(2),
+          status:'PENDING',sourceEvent:'OFFLINE_SALE_SYNCED',idempotencyKey:idempotencyKey+'-commission',createdBy:userId}});
+      }
+      await tx.auditLog.create({data:{userId,action:'OFFLINE_SALE_SYNCED',entity:'Sale',entityId:saleId,idempotencyKey,
+        newValues:JSON.stringify({saleNumber,status:sale.status,clientCapturedAt,serverReceivedAt})}});
+      await tx.syncOperation.create({data:{idempotencyKey,deviceId,userId,operationType:'SALE',entityType:'Sale',entityId:saleId,
+        clientCapturedAt,serverReceivedAt,status:'SYNCED',payload:JSON.stringify(payload),payloadHash}});
+      return{idempotencyKey,status:'SYNCED',data:{...sale,downPayment,companyContribution,credit,
+        pendingAuthorization:requiresAuthorization},serverReceivedAt:serverReceivedAt.toISOString()} as SyncOperationResult;
+    },{maxWait:10000,timeout:30000});
   }
 
   /**

@@ -26,7 +26,10 @@ export async function POST(req: NextRequest) {
     const userAgent = req.headers.get('user-agent') || 'Unknown';
     const result = await AuthService.login({email:normalizedEmail,password,ipAddress,userAgent});
     if (!result.success) return NextResponse.json(result,{status:result.code==='ACCOUNT_LOCKED'?423:401});
-    return NextResponse.json(result);
+    const {refreshToken,...publicResult}=result;
+    const response=NextResponse.json(publicResult);
+    if(refreshToken)response.cookies.set('bitalis_refresh_token',refreshToken,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api/auth',maxAge:7*24*60*60});
+    return response;
   } catch (error: any) {
     console.error('Login API error:', error);
     return NextResponse.json({ success: false, message: 'Error interno en login.' }, { status: 500 });

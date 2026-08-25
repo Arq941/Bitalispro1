@@ -12,8 +12,10 @@ const payments = read('app/api/payments/route.ts');
 const permissions = read('src/server/auth/permission.service.ts');
 const adminAccess = read('app/api/admin/access/route.ts');
 const shell = read('components/phase15/AppShell.tsx');
+const loginPage = read('app/page.tsx');
 const clients = read('src/crm/client.service.ts');
 const intake = read('app/api/clients/intake/route.ts');
+const quickIntake = read('app/clients/new/QuickClientIntake.tsx');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
 const newSale = read('app/sales/new/page.tsx');
 const notifications = read('src/notifications/notifications.service.ts');
@@ -26,6 +28,27 @@ const inventoryService = read('src/inventory/inventory.service.ts');
 const routePlan = read('app/api/collections/route-plan/route.ts');
 const routePage = read('app/route/page.tsx');
 const collectionVisits = read('app/api/collections/visits/route.ts');
+const middleware = read('middleware.ts');
+const securityService = read('src/server/auth/security.service.ts');
+const refundRoute = read('app/api/cash-sessions/[id]/refunds/route.ts');
+const conflictResolution = read('app/api/offline/conflicts/[id]/resolve/route.ts');
+const nextConfig = read('next.config.ts');
+
+assert(!securityService.includes('bitalis_super_secret_jwt_key'),
+  'JWT signing must never fall back to a repository secret');
+assert(securityService.includes('JWT_SECRET debe existir'),
+  'missing JWT_SECRET must fail closed');
+assert(middleware.includes("matcher:['/api/:path*']") && middleware.includes("crypto.subtle.verify('HMAC'"),
+  'every API route must pass the central cryptographic authentication gate');
+assert(middleware.includes('SUPERVISION_PREFIXES') && middleware.includes('ADMIN_ONLY_PREFIXES'),
+  'legacy APIs must be protected centrally by role');
+assert(refundRoute.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && refundRoute.includes('authorizedBy: supervisor.userId'),
+  'refunds must use the authenticated supervisor identity');
+assert(conflictResolution.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && conflictResolution.includes('supervisorId: supervisor.userId'),
+  'offline conflicts must not trust client-supplied supervisor identifiers');
+for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
+  assert(nextConfig.includes(header),'global security headers must include '+header);
+}
 
 assert(payments.includes("requirePermission(verified.sub, 'collections.collect')"),
   'payment writes must require collections.collect');
@@ -56,6 +79,8 @@ assert(intake.includes("['ADMIN','SUPERVISORA','VENDEDORA','COBRADOR'].includes(
   'quick intake endpoint must be available to every authenticated operational role');
 assert(intake.includes('Respuesta deliberadamente ciega'),
   'quick intake response must not leak the created record');
+assert(intake.includes('prisma.idempotencyRecord.findUnique') && intake.includes('prisma.idempotencyRecord.upsert'),
+  'complete client intake acknowledgement must survive process restarts and lost responses');
 assert(androidSecurity.includes('LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L'),
   'Android must require biometric unlock after two minutes in background');
 assert(androidSecurity.includes('CREDENTIAL_SESSION_MS = 8L * 60L * 60L * 1000L'),
@@ -94,5 +119,55 @@ assert(collectionVisits.includes("requirePermission(user.userId, 'collections.co
   'collection visits must be limited to the assigned collector portfolio');
 assert(collectionVisits.includes('proximaVisita: nextDate') && routePage.includes("rescheduleDate:result==='RESCHEDULED'"),
   'rescheduling from route must persist the next visit date');
+
+const offlineStorage = read('lib/offline-storage.ts');
+const apiCache = read('lib/phase15/apiCache.ts');
+const offlineClient = read('lib/offline-sync-client.ts');
+const offlineRoute = read('app/api/offline/sync/route.ts');
+const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
+const offlineService = read('src/offline/offline-sync.service.ts');
+const serviceWorker = read('public/sw.js');
+assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes("recoverStuck") && offlineStorage.includes("applyServerResult"),
+  'offline queue must recover interrupted sync and reconcile each server result');
+assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
+  'offline operations and cached records must remain scoped to their owner and device');
+assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
+  'offline sync must use authenticated API access and never fallback to fabricated identities');
+assert(offlineClient.includes("localStorage.getItem('bitalis_auth_user')") && offlineClient.includes("if(!userId)return null"),
+  'offline queue identity must come from the authenticated session and fail closed after logout');
+assert(shell.includes('clearApiCacheForUser(ownerId)') && shell.includes('offlineStorage.clearCachedUserData(ownerId)') &&
+  shell.includes("'userId','bitalis_offline_ready'"),
+  'logout and account switching must remove readable owner caches and stale identity markers');
+assert(apiCache.includes('clearApiCacheForUser') && offlineStorage.includes('clearCachedUserData'),
+  'offline cache cleanup must be available without deleting pending mutations');
+assert(loginPage.includes("!navigator.onLine") && loginPage.includes("localStorage.getItem(permissionCacheKey)") &&
+  loginPage.includes("localStorage.setItem(permissionCacheKey"),
+  'cold offline startup must reuse only a permission matrix previously validated online');
+assert(loginPage.includes("localStorage.removeItem(permissionCacheKey)"),
+  'starting a different login must remove the previous account permission snapshot');
+assert(shell.includes("window.addEventListener('online',onFocus)"),
+  'permissions must be revalidated immediately when connectivity returns');
+assert(quickIntake.includes("offlineStorage.create") && quickIntake.includes("operationType:'CLIENT'") && !quickIntake.includes("phase15/offlineQueue"),
+  'quick client intake must use the durable owner-scoped queue');
+assert(offlineClient.includes("clientIntakeForm") && offlineClient.includes("value instanceof Blob") && offlineClient.includes("body:clientIntakeForm(op)"),
+  'queued client photos must be reconstructed and synchronized as multipart data');
+assert(offlineClient.includes("await offlineStorage.delete(op.id)") && offlineClient.includes("[400,403,404].includes"),
+  'client photos must be deleted only after acknowledgement and permanent rejections must not retry forever');
+assert(offlineRoute.includes("MAX_BATCH=25") && offlineRoute.includes("userId:undefined") && offlineRoute.includes("extractUserContext"),
+  'offline batches must be bounded and bound exclusively to the verified session');
+assert(offlineIndicator.includes("applyServerResult") === false && offlineIndicator.includes("syncOfflineQueue"),
+  'offline UI must delegate per-operation reconciliation to the single sync coordinator');
+assert(offlineService.includes("OFFLINE_HANDLER_NOT_IMPLEMENTED") && !offlineService.includes("Generic fallback for custom synced entity"),
+  'offline sync must never confirm a domain operation without executing its handler');
+assert(offlineService.includes("processSaleOperation") && offlineService.includes("prisma.$transaction") &&
+  offlineService.includes("inventoryStock.updateMany") && offlineService.includes("syncOperation.create"),
+  'offline sale, inventory and acknowledgement must commit in one transaction');
+for(const entity of ['saleDownPayment.create','companyContribution.create','credit.create','commission.create','auditLog.create']){
+  assert(offlineService.includes(entity),'atomic offline sale must include '+entity);
+}
+assert(offlineRoute.includes("permissionByType") && offlineRoute.includes("PermissionService.requirePermission"),
+  'queued offline mutations must be reauthorized with current permissions at sync time');
+assert(serviceWorker.includes('NAVIGATION_TIMEOUT_MS=3500') && serviceWorker.includes('fetchWithTimeout'),
+  'offline navigation must fall back promptly on unstable mobile connections');
 
 if (!process.exitCode) console.log('ROLE_SECURITY_CHECKS_OK');

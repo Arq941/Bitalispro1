@@ -1,132 +1,29 @@
 'use client';
+import React,{useCallback,useEffect,useState}from'react';
+import{offlineStorage,OfflineOperation}from'@/lib/offline-storage';
+import{installOfflineAutoSync,offlineIdentity,syncOfflineQueue}from'@/lib/offline-sync-client';
+import{Wifi,WifiOff,RefreshCw,Database}from'lucide-react';
 
-import React, { useState, useEffect } from 'react';
-import { offlineStorage, OfflineOperation } from '@/lib/offline-storage';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle, Database } from 'lucide-react';
-
-export function OfflineSyncIndicator() {
-  const [isOnline, setIsOnline] = useState<boolean>(true);
-  const [pendingOps, setPendingOps] = useState<OfflineOperation[]>([]);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
-
-  const checkOnlineAndPending = async () => {
-    setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
-    try {
-      const pending = await offlineStorage.getPending();
-      setPendingOps(pending);
-    } catch {
-      // ignore SSR or IndexedDB unavailable
-    }
-  };
-
-  useEffect(() => {
-    checkOnlineAndPending();
-
-    const handleOnline = () => {
-      setIsOnline(true);
-      triggerSync();
-    };
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    const interval = setInterval(checkOnlineAndPending, 10000);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      clearInterval(interval);
-    };
-  }, []);
-
-  const triggerSync = async () => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    setSyncStatusMsg('Sincronizando operaciones...');
-
-    try {
-      const pending = await offlineStorage.getPending();
-      if (pending.length === 0) {
-        setSyncStatusMsg('Todo está actualizado');
-        setTimeout(() => setSyncStatusMsg(null), 3000);
-        setIsSyncing(false);
-        return;
-      }
-
-      const deviceId = localStorage.getItem('deviceId') || 'PWA-DEVICE-01';
-      const userId = localStorage.getItem('userId') || 'COBRADOR-01';
-
-      const response = await fetch('/api/offline/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId,
-        },
-        body: JSON.stringify({
-          deviceId,
-          userId,
-          operations: pending.map((p) => ({
-            idempotencyKey: p.idempotencyKey,
-            operationType: p.operationType,
-            payload: p.payload,
-            clientCapturedAt: p.clientCapturedAt,
-            deviceId: p.deviceId,
-            userId: p.userId,
-          })),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        for (const item of pending) {
-          await offlineStorage.markSynced(item.id);
-        }
-        await offlineStorage.clearSynced();
-        setSyncStatusMsg(`Sincronización exitosa (${data.syncedCount || pending.length})`);
-      } else {
-        setSyncStatusMsg(`Sincronización parcial/con conflictos (${data.conflictCount || 0} conflictos)`);
-      }
-      await checkOnlineAndPending();
-    } catch (error: any) {
-      setSyncStatusMsg('Error de red al sincronizar');
-    } finally {
-      setIsSyncing(false);
-      setTimeout(() => setSyncStatusMsg(null), 4000);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2 bg-slate-900/90 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur shadow-md">
-      {/* Network Badge */}
-      <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full ${isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-        {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-        <span>{isOnline ? 'En línea' : 'Sin conexión'}</span>
-      </div>
-
-      {/* Queue Count */}
-      {pendingOps.length > 0 && (
-        <div className="flex items-center gap-1 bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">
-          <Database className="w-3.5 h-3.5" />
-          <span>{pendingOps.length} pendientes</span>
-        </div>
-      )}
-
-      {/* Sync Status Message */}
-      {syncStatusMsg && <span className="text-slate-300 hidden sm:inline text-[11px]">{syncStatusMsg}</span>}
-
-      {/* Manual Sync Button */}
-      <button
-        onClick={triggerSync}
-        disabled={isSyncing || !isOnline}
-        className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-2.5 py-1 rounded-full transition-all text-xs active:scale-95 ml-1"
-        title="Sincronizar ahora"
-      >
-        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-        <span>Sincronizar</span>
-      </button>
-    </div>
-  );
+export function OfflineSyncIndicator(){
+ const[online,setOnline]=useState(true),[ops,setOps]=useState<OfflineOperation[]>([]),[syncing,setSyncing]=useState(false),[msg,setMsg]=useState<string|null>(null);
+ const load=useCallback(async()=>{setOnline(navigator.onLine);const id=offlineIdentity();setOps(id?await offlineStorage.listForUser(id.userId,id.deviceId):[]);},[]);
+ const sync=useCallback(async()=>{if(syncing||!navigator.onLine)return;setSyncing(true);setMsg('Sincronizando…');
+  try{const result=await syncOfflineQueue();const conflicts=result?.results.filter(x=>x.status==='CONFLICT'||x.status==='REJECTED').length||0;
+   setMsg(conflicts?String(conflicts)+' requieren revisión':'Sincronización confirmada');}
+  catch{setMsg('Sin confirmar; seguirá pendiente');}finally{await load();setSyncing(false);window.setTimeout(()=>setMsg(null),4000);}},[load,syncing]);
+ useEffect(()=>{const refresh=()=>void load();const dispose=installOfflineAutoSync();load();
+  window.addEventListener('online',refresh);window.addEventListener('offline',refresh);window.addEventListener('bitalis:offline-queue-changed',refresh);
+  const timer=window.setInterval(refresh,10000);return()=>{dispose();clearInterval(timer);window.removeEventListener('online',refresh);window.removeEventListener('offline',refresh);window.removeEventListener('bitalis:offline-queue-changed',refresh);};},[load]);
+ const pending=ops.filter(x=>x.status==='QUEUED'||x.status==='SYNCING'||x.status==='FAILED').length;
+ const attention=ops.filter(x=>x.status==='CONFLICT'||x.status==='REJECTED').length;
+ return <div className="flex items-center gap-2 bg-slate-900/90 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur shadow-md">
+  <div className={'flex items-center gap-1.5 px-2 py-0.5 rounded-full '+(online?'bg-emerald-500/20 text-emerald-400':'bg-amber-500/20 text-amber-400')}>
+   {online?<Wifi className="w-3.5 h-3.5"/>:<WifiOff className="w-3.5 h-3.5"/>}<span>{online?'En línea':'Sin conexión'}</span>
+  </div>
+  {(pending>0||attention>0)&&<div className="flex items-center gap-1 bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full"><Database className="w-3.5 h-3.5"/><span>{pending} pendientes{attention?', '+attention+' revisar':''}</span></div>}
+  {msg&&<span className="text-slate-300 hidden sm:inline text-[11px]">{msg}</span>}
+  <button onClick={sync} disabled={syncing||!online||pending===0} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-2.5 py-1 rounded-full transition-all active:scale-95" title="Sincronizar ahora">
+   <RefreshCw className={'w-3.5 h-3.5 '+(syncing?'animate-spin':'')}/><span>{syncing?'Enviando':'Sincronizar'}</span>
+  </button>
+ </div>;
 }

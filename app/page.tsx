@@ -12,7 +12,7 @@ import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 
 const permissionCacheKey='bitalis_effective_permissions';
-const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user'];
+const authKeys=['bitalis_access_token','bitalis_refresh_token','bitalis_auth_user','userId','bitalis_offline_ready'];
 const webBuild=BITALIS_BUILD_COMMIT==='development'?'DEV':BITALIS_BUILD_COMMIT.slice(0,8);
 type SessionUser={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type EntrySource='login'|'restore';
@@ -53,8 +53,17 @@ export default function ProductionLoginPage() {
       const json:any=await apiClient('/api/auth/permissions',{timeoutMs:12000,retry:1});
       const codes=Array.isArray(json?.permissionCodes)?json.permissionCodes.map(String):[];
       sessionStorage.setItem(permissionCacheKey,JSON.stringify(codes));
+      localStorage.setItem(permissionCacheKey,JSON.stringify(codes));
       return codes;
-    }catch{return null;}
+    }catch{
+      if(typeof navigator!=='undefined'&&!navigator.onLine){
+        try{
+          const cached=JSON.parse(localStorage.getItem(permissionCacheKey)||'null');
+          if(Array.isArray(cached)&&cached.every(code=>typeof code==='string'))return cached;
+        }catch{}
+      }
+      return null;
+    }
   };
 
   const enterAuthenticatedApp=async(user:SessionUser,permissionCodes:string[],source:EntrySource)=>{
@@ -103,6 +112,7 @@ export default function ProductionLoginPage() {
       } catch {
         authKeys.forEach(key=>localStorage.removeItem(key));
         sessionStorage.removeItem(permissionCacheKey);
+        localStorage.removeItem(permissionCacheKey);
       }
     }
 
@@ -126,6 +136,7 @@ export default function ProductionLoginPage() {
     setError('');
     authKeys.forEach(key=>localStorage.removeItem(key));
     sessionStorage.removeItem(permissionCacheKey);
+    localStorage.removeItem(permissionCacheKey);
     try {
       navigator.vibrate?.(18);
       const response = await fetch('/api/auth/login', {
@@ -138,12 +149,10 @@ export default function ProductionLoginPage() {
       if (!response.ok) throw new Error(json?.error || json?.message || 'Credenciales inválidas o cuenta inaccesible.');
 
       const accessToken = json?.accessToken || json?.access_token || json?.tokens?.accessToken;
-      const refreshToken = json?.refreshToken || json?.refresh_token || json?.tokens?.refreshToken;
       const user = json?.user as SessionUser|undefined;
       if (!accessToken || !user) throw new Error('No pudimos iniciar la sesión. Intenta nuevamente.');
 
       localStorage.setItem('bitalis_access_token', accessToken);
-      if (refreshToken) localStorage.setItem('bitalis_refresh_token', refreshToken);
       localStorage.setItem('bitalis_auth_user', JSON.stringify(user));
 
       const permissionCodes=await primeAuthenticatedApp();
