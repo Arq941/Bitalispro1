@@ -8,6 +8,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -18,6 +19,8 @@ import android.os.Bundle;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Parcelable;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.MediaStore;
 import android.view.Window;
 import android.webkit.CookieManager;
@@ -107,6 +110,7 @@ public class MainActivity extends Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setUserAgentString(settings.getUserAgentString() + " BITALIS-Android/" + getVersionName());
         webView.addJavascriptInterface(new NotificationBridge(), "BitalisNotifications");
+        webView.addJavascriptInterface(new HapticsBridge(), "BitalisHaptics");
 
         WebView.setWebContentsDebuggingEnabled(false);
         CookieManager cookieManager = CookieManager.getInstance();
@@ -195,6 +199,35 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
+    }
+
+    private final class HapticsBridge {
+        @JavascriptInterface
+        public void perform(String pattern) {
+            runOnUiThread(() -> performHaptic(pattern));
+        }
+    }
+
+    private void performHaptic(String pattern) {
+        Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        long[] timings;
+        int amplitude;
+        switch (pattern == null ? "tap" : pattern) {
+            case "success": timings = new long[]{0, 18, 35, 18}; amplitude = 110; break;
+            case "warning": timings = new long[]{0, 28, 45, 28}; amplitude = 150; break;
+            case "error": timings = new long[]{0, 45, 35, 45}; amplitude = 210; break;
+            case "heavy": timings = new long[]{0, 55}; amplitude = 190; break;
+            case "selection": timings = new long[]{0, 8}; amplitude = 70; break;
+            default: timings = new long[]{0, 12}; amplitude = 85;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            int[] amplitudes = new int[timings.length];
+            for (int index = 1; index < amplitudes.length; index += 2) amplitudes[index] = amplitude;
+            vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1));
+        } else {
+            vibrator.vibrate(timings, -1);
         }
     }
 
