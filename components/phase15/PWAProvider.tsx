@@ -2,21 +2,17 @@
 
 import {ReactNode,useEffect} from 'react';
 import SyncManager from '@/components/phase15/SyncManager';
-import {BITALIS_BUILD_AT,BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
+import {BITALIS_BUILD_COMMIT} from '@/lib/generated/buildInfo';
 import {traceAuthTransition} from '@/lib/ux/authTransitionTrace';
 
 const LEGACY_PWA_CACHE_PREFIXES=['bitalis-phase15-','pwa-','workbox-'];
-const CLIENT_BUILD_ID=`${BITALIS_BUILD_COMMIT}@${BITALIS_BUILD_AT}`;
-const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v5:${CLIENT_BUILD_ID}`;
-const REGISTERED_KEY=`bitalis_pwa_registered:${CLIENT_BUILD_ID}`;
+const CLEANUP_KEY=`bitalis_legacy_pwa_cleanup_v5:${BITALIS_BUILD_COMMIT}`;
+const REGISTERED_KEY=`bitalis_pwa_registered:${BITALIS_BUILD_COMMIT}`;
 const LAST_MISMATCH_KEY='bitalis:last-build-mismatch';
 const permissionCacheKey='bitalis_effective_permissions';
 
-function parseBuild(text:string){
-  return {
-    commit:text.match(/^commit=(.+)$/m)?.[1]?.trim()||'',
-    builtAt:text.match(/^built_at=(.+)$/m)?.[1]?.trim()||'',
-  };
+function parseCommit(text:string){
+  return text.match(/^commit=(.+)$/m)?.[1]?.trim()||'';
 }
 
 async function clearBrowserDeliveryState(allCaches=false){
@@ -66,39 +62,22 @@ export default function PWAProvider({children}:{children:ReactNode}){
         const response=await fetch(`/build-version.txt?ts=${Date.now()}`,{cache:'no-store',headers:{'Cache-Control':'no-store'}});
         if(!response.ok)throw new Error(`BUILD_VERSION_${response.status}`);
         const serverText=await response.text();
-        const serverBuild=parseBuild(serverText);
+        const serverCommit=parseCommit(serverText);
         const clientCommit=String(BITALIS_BUILD_COMMIT||'').trim();
-        const clientBuiltAt=String(BITALIS_BUILD_AT||'').trim();
-        const clientKnown=!!clientCommit&&!['development','unknown'].includes(clientCommit)&&!!clientBuiltAt&&clientBuiltAt!=='development';
-        const serverKnown=!!serverBuild.commit&&serverBuild.commit!=='unknown'&&!!serverBuild.builtAt;
-        const matches=!clientKnown||!serverKnown||(clientCommit===serverBuild.commit&&clientBuiltAt===serverBuild.builtAt);
-        traceAuthTransition('build-version-check',{
-          client:clientCommit.slice(0,12)||'unknown',
-          server:serverBuild.commit.slice(0,12)||'unknown',
-          clientBuiltAt,
-          serverBuiltAt:serverBuild.builtAt,
-          matches,
-        });
+        const clientKnown=!!clientCommit&&!['development','unknown'].includes(clientCommit);
+        const serverKnown=!!serverCommit&&serverCommit!=='unknown';
+        const matches=!clientKnown||!serverKnown||clientCommit===serverCommit;
+        traceAuthTransition('build-version-check',{client:clientCommit.slice(0,12)||'unknown',server:serverCommit.slice(0,12)||'unknown',matches});
         if(disposed)return false;
 
-        if(clientKnown&&serverKnown&&!matches){
-          try{localStorage.setItem(LAST_MISMATCH_KEY,JSON.stringify({
-            at:new Date().toISOString(),
-            client:CLIENT_BUILD_ID,
-            server:`${serverBuild.commit}@${serverBuild.builtAt}`,
-            path:location.pathname,
-          }));}catch{}
-          traceAuthTransition('build-version-mismatch',{
-            client:clientCommit.slice(0,12),
-            server:serverBuild.commit.slice(0,12),
-            clientBuiltAt,
-            serverBuiltAt:serverBuild.builtAt,
-          });
+        if(clientKnown&&serverKnown&&clientCommit!==serverCommit){
+          try{localStorage.setItem(LAST_MISMATCH_KEY,JSON.stringify({at:new Date().toISOString(),client:clientCommit,server:serverCommit,path:location.pathname}));}catch{}
+          traceAuthTransition('build-version-mismatch',{client:clientCommit.slice(0,12),server:serverCommit.slice(0,12)});
           await clearBrowserDeliveryState(true);
           if(disposed)return false;
           const returnTo=`${location.pathname}${location.search}${location.hash}`;
-          traceAuthTransition('build-version-reload',{server:serverBuild.commit.slice(0,12),serverBuiltAt:serverBuild.builtAt});
-          location.replace(`/api/system/recover?return=${encodeURIComponent(returnTo)}&build=${encodeURIComponent(serverBuild.builtAt)}`);
+          traceAuthTransition('build-version-reload',{server:serverCommit.slice(0,12)});
+          location.replace(`/api/system/recover?return=${encodeURIComponent(returnTo)}&build=${encodeURIComponent(serverCommit)}`);
           return false;
         }
 
