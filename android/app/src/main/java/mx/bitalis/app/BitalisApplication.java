@@ -2,6 +2,10 @@ package mx.bitalis.app;
 
 import android.app.Activity;
 import android.app.Application;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.media.AudioAttributes;
+import android.os.Build;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -30,6 +34,35 @@ public class BitalisApplication extends Application implements Application.Activ
         super.onCreate();
         registerActivityLifecycleCallbacks(this);
         refreshWebDeliveryCacheOnProcessStart();
+        createNotificationChannels();
+    }
+
+    private void createNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) return;
+
+        NotificationChannel operational = new NotificationChannel(
+                "bitalis_operational", "BITALIS · Operación",
+                NotificationManager.IMPORTANCE_DEFAULT);
+        operational.setDescription("Avisos de clientes, ventas, cobranza y sincronización.");
+        operational.enableVibration(true);
+        operational.setVibrationPattern(new long[]{0, 180, 120, 180});
+
+        NotificationChannel urgent = new NotificationChannel(
+                "bitalis_urgent", "BITALIS · Alta prioridad",
+                NotificationManager.IMPORTANCE_HIGH);
+        urgent.setDescription("Alertas urgentes enviadas por administración.");
+        urgent.enableVibration(true);
+        urgent.setVibrationPattern(new long[]{0, 350, 160, 350, 160, 600});
+        urgent.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+        urgent.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build());
+
+        manager.createNotificationChannel(operational);
+        manager.createNotificationChannel(urgent);
     }
 
     public synchronized void markBiometricUnlocked() {
