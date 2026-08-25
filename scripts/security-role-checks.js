@@ -125,6 +125,7 @@ const apiCache = read('lib/phase15/apiCache.ts');
 const offlineClient = read('lib/offline-sync-client.ts');
 const offlineRoute = read('app/api/offline/sync/route.ts');
 const offlineIndicator = read('components/offline/OfflineSyncIndicator.tsx');
+const syncManager = read('components/phase15/SyncManager.tsx');
 const offlineService = read('src/offline/offline-sync.service.ts');
 const serviceWorker = read('public/sw.js');
 assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes("recoverStuck") && offlineStorage.includes("applyServerResult"),
@@ -157,6 +158,15 @@ assert(offlineRoute.includes("MAX_BATCH=25") && offlineRoute.includes("userId:un
   'offline batches must be bounded and bound exclusively to the verified session');
 assert(offlineIndicator.includes("applyServerResult") === false && offlineIndicator.includes("syncOfflineQueue"),
   'offline UI must delegate per-operation reconciliation to the single sync coordinator');
+assert(syncManager.includes('installOfflineAutoSync') && syncManager.includes('offlineStorage.listForUser(identity.userId,identity.deviceId,true)'),
+  'the global shell must install durable auto-sync and count every non-confirmed operation');
+assert(syncManager.includes('syncOfflineQueue') && syncManager.includes('syncQueuedOperations') &&
+  syncManager.includes("'bitalis:offline-queue-changed'") && syncManager.includes("'bitalis:queue-changed'"),
+  'pending indicator must reconcile durable and legacy queues without abandoning prior captures');
+assert(syncManager.includes('Por privacidad no se muestran nombre, ubicación ni fotografías') && !syncManager.includes('row.payload'),
+  'blind client intake status must never expose locally queued customer data');
+assert(syncManager.includes('BITALIS no elimina una captura hasta recibir confirmación individual del servidor'),
+  'pending-upload UI must communicate server-confirmed deletion semantics');
 assert(offlineService.includes("OFFLINE_HANDLER_NOT_IMPLEMENTED") && !offlineService.includes("Generic fallback for custom synced entity"),
   'offline sync must never confirm a domain operation without executing its handler');
 assert(offlineService.includes("processSaleOperation") && offlineService.includes("prisma.$transaction") &&
