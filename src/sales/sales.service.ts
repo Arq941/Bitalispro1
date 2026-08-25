@@ -97,6 +97,69 @@ export class SalesService {
     SalesStore.clear();
   }
 
+  private static async commitSaleInventory(params: {
+    saleId: string;
+    items: Array<{ productId: string; quantity: number }>;
+    warehouseId: string;
+    userId: string;
+    idempotencyKey?: string;
+  }) {
+    const prisma = PrismaService.getInstance();
+    const required = new Map<string, number>();
+    for (const item of params.items) {
+      required.set(item.productId, (required.get(item.productId) || 0) + item.quantity);
+    }
+
+    // Reanuda ventas interrumpidas sin volver a reservar ni descontar lo ya convertido.
+    const existing = await prisma.inventoryReservation.findMany({
+      where: {
+        saleId: params.saleId,
+        status: { in: ["ACTIVE", "CONVERTED_TO_DELIVERY"] as any },
+      },
+    });
+    const covered = new Map<string, number>();
+    for (const reservation of existing) {
+      covered.set(
+        reservation.productId,
+        (covered.get(reservation.productId) || 0) + reservation.quantity,
+      );
+    }
+
+    for (const [productId, quantity] of required) {
+      const missing = quantity - (covered.get(productId) || 0);
+      if (missing <= 0) continue;
+      await InventoryService.reserveStock({
+        productId,
+        warehouseId: params.warehouseId,
+        quantity: missing,
+        saleId: params.saleId,
+        userId: params.userId,
+        expirationMinutes: 60,
+        idempotencyKey: params.idempotencyKey
+          ? `${params.idempotencyKey}_reserve_${productId}`
+          : undefined,
+      });
+    }
+
+    const pending = await prisma.inventoryReservation.findMany({
+      where: { saleId: params.saleId, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const reservation of pending) {
+      await InventoryService.deliverProduct({
+        warehouseId: reservation.warehouseId,
+        productId: reservation.productId,
+        quantity: reservation.quantity,
+        reservationId: reservation.id,
+        saleId: params.saleId,
+        userId: params.userId,
+        idempotencyKey: params.idempotencyKey
+          ? `${params.idempotencyKey}_delivery_${reservation.id}`
+          : undefined,
+      });
+    }
+  }
+
   public static async generateSaleNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `VTA-${year}-`;
@@ -132,7 +195,19 @@ export class SalesService {
           where: { idempotencyKey: dto.idempotencyKey },
           include: { items: true, client: true },
         });
-        if (persisted) return persisted;
+        if (persisted) {
+          await this.commitSaleInventory({
+            saleId: persisted.id,
+            items: persisted.items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+            })),
+            warehouseId: dto.warehouseId || "wh_central",
+            userId: userContext.userId,
+            idempotencyKey: dto.idempotencyKey,
+          });
+          return persisted;
+        }
       } catch (error) {
         this.failClosedInProduction(error);
       }
@@ -314,17 +389,16 @@ export class SalesService {
         }
       createdSale = saleRecord;
     }
-    for (const item of itemsData)
-      await InventoryService.reserveStock({
+    await this.commitSaleInventory({
+      saleId,
+      items: itemsData.map((item) => ({
         productId: item.productId,
-        warehouseId,
         quantity: item.quantity,
-        saleId,
-        userId: userContext.userId,
-        idempotencyKey: dto.idempotencyKey
-          ? `${dto.idempotencyKey}_res_${item.productId}`
-          : undefined,
-      });
+      })),
+      warehouseId,
+      userId: userContext.userId,
+      idempotencyKey: dto.idempotencyKey,
+    });
     let downPaymentRecord = null,
       companyContributionRecord = null;
     if (engancheCliente.greaterThan(0)) {
