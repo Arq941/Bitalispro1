@@ -65,6 +65,13 @@ export default function SyncManager(){
   },[load]);
 
   useEffect(()=>{
+    if(!feedback)return;
+    const delay=feedback.startsWith('Sincronización terminada')?2600:5200;
+    const timer=window.setTimeout(()=>setFeedback(null),delay);
+    return()=>window.clearTimeout(timer);
+  },[feedback]);
+
+  useEffect(()=>{
     const refresh=()=>void load();
     const reconnect=()=>{void load();void sync();};
     const dispose=installOfflineAutoSync();
@@ -96,7 +103,10 @@ export default function SyncManager(){
       {syncing?<Loader2 className="h-6 w-6 animate-spin"/>:<CloudUpload className="h-6 w-6"/>}
       <span className={`absolute -right-1.5 -top-1.5 flex min-h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-black text-white ring-2 ring-white ${attention?'bg-red-600':'bg-amber-500'}`}>{total>99?'99+':total}</span>
     </button>}
-    {feedback&&!open&&<button type="button" onClick={()=>setFeedback(null)} className="fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] left-3 right-20 z-[114] min-h-12 rounded-2xl bg-[var(--bitalis-primary)] px-3 text-left text-[11px] font-bold leading-4 text-white shadow-lg">{feedback}</button>}
+    {feedback&&!open&&<div role="status" aria-live="polite" className="pointer-events-none fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] left-1/2 z-[114] flex max-w-[min(92vw,24rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-emerald-100 bg-white/96 px-3 py-2 text-[10px] font-bold leading-4 text-[var(--bitalis-primary)] shadow-[0_8px_24px_rgba(6,43,36,.14)] backdrop-blur-md motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2">
+      {feedback.startsWith('Sincronización terminada')?<CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--bitalis-action)]"/>:<WifiOff className="h-4 w-4 shrink-0 text-amber-600"/>}
+      <span className="line-clamp-2">{feedback.startsWith('Sincronización terminada')?'Sincronización terminada':feedback}</span>
+    </div>}
     {open&&<div data-no-swipe className="fixed inset-0 z-[170] flex items-end bg-slate-950/55 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4" onClick={()=>setOpen(false)}>
       <section role="dialog" aria-modal="true" aria-labelledby="offline-pending-title" onClick={event=>event.stopPropagation()} className="bitalis-bottom-sheet max-h-[82svh] w-full overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-[28px] sm:p-5">
         <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${attention?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`}>{attention?<AlertTriangle className="h-6 w-6"/>:<CloudUpload className="h-6 w-6"/>}</div><div><p className="text-[10px] font-black uppercase tracking-[.13em] text-[var(--bitalis-action)]">Protegido en este dispositivo</p><h2 id="offline-pending-title" className="text-lg font-black text-[var(--bitalis-primary)]">{total} por confirmar</h2></div></div><button type="button" onClick={()=>setOpen(false)} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600" aria-label="Cerrar pendientes"><X className="h-5 w-5"/></button></div>
