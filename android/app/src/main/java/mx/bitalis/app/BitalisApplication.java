@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.Application;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.media.AudioAttributes;
 import android.os.Build;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -56,10 +55,6 @@ public class BitalisApplication extends Application implements Application.Activ
         urgent.enableVibration(true);
         urgent.setVibrationPattern(new long[]{0, 350, 160, 350, 160, 600});
         urgent.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
-        urgent.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build());
 
         manager.createNotificationChannel(operational);
         manager.createNotificationChannel(urgent);
