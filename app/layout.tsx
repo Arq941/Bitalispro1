@@ -30,6 +30,7 @@ const deliveryGuard = String.raw`(()=>{
       history.replaceState(history.state,'',url.pathname+url.search+url.hash);
     }catch{}
   };
+  const recoveryUrl=()=>'/__bitalis/recover?return='+encodeURIComponent(location.pathname+location.search+location.hash)+'&ts='+Date.now();
   const isNextAsset=(value)=>String(value||'').includes('/_next/');
   const isDeliveryError=(value)=>{
     const text=String(value||'').toLowerCase();
@@ -63,7 +64,7 @@ const deliveryGuard = String.raw`(()=>{
       const button=document.createElement('button');
       button.type='button';button.textContent='REINTENTAR CARGA LIMPIA';
       button.style.cssText='width:100%;min-height:52px;margin-top:20px;border:0;border-radius:16px;background:#11A65A;color:#fff;font-size:14px;font-weight:900';
-      button.onclick=()=>{setAttempts(0);const url=new URL(location.href);url.searchParams.set(RECOVERY_PARAM,String(Date.now()));location.replace(url.toString());};
+      button.onclick=()=>{setAttempts(0);location.replace(recoveryUrl());};
       card.appendChild(button);
     }
     panel.appendChild(card);
@@ -84,9 +85,7 @@ const deliveryGuard = String.raw`(()=>{
     setAttempts(attempts+1);
     showRecovery(false,detail||reason);
     await clearDeliveryCaches();
-    const url=new URL(location.href);
-    url.searchParams.set(RECOVERY_PARAM,String(Date.now())+'-'+String(attempts+1));
-    setTimeout(()=>location.replace(url.toString()),120);
+    setTimeout(()=>location.replace(recoveryUrl()),120);
   };
   window.addEventListener('error',(event)=>{
     try{
