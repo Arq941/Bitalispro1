@@ -142,3 +142,67 @@ input[aria-invalid="true"],select[aria-invalid="true"],textarea[aria-invalid="tr
 @media(hover:hover) and (pointer:fine){.bitalis-card-interactive:hover{transform:translateY(-2px);border-color:#BFD7CA;box-shadow:var(--bitalis-shadow-md)}button:not(:disabled):hover,[role="button"]:not([aria-disabled="true"]):hover{filter:saturate(1.04)}}
 @media(max-width:359px){:root{--bitalis-header-height:64px}.bitalis-page{padding:9px}.bitalis-page-title{font-size:1.2rem}.bitalis-page-description{font-size:11px}.bitalis-card{border-radius:18px}}
 @media(forced-colors:active){button,a,input,select,textarea{outline-color:CanvasText}.bitalis-card,.bitalis-android-surface{border:1px solid CanvasText}}
+
+
+/* UX avanzada 2026: mejora transversal para todas las pantallas BITALIS. */
+:root{--bitalis-content-max:1280px;--bitalis-desktop-rail:92px}
+.bitalis-app-shell{background:
+ radial-gradient(circle at 100% 0,rgba(112,229,166,.09),transparent 28rem),
+ var(--bitalis-bg)}
+.bitalis-app-shell>main>div,.bitalis-app-shell>main>main{animation:bitalis-screen-in .18s ease-out}
+@keyframes bitalis-screen-in{from{opacity:.72;transform:translateY(3px)}to{opacity:1;transform:none}}
+.bitalis-app-shell :where(button,a,[role="button"]){min-height:48px}
+.bitalis-app-shell :where(button,a,[role="button"]):active{filter:brightness(.97)}
+.bitalis-app-shell :where(input,select,textarea){border-radius:16px;border-color:var(--bitalis-border);background-color:#fff;transition:border-color .16s,box-shadow .16s,background-color .16s}
+.bitalis-app-shell :where(input,select,textarea):focus{border-color:var(--bitalis-action);box-shadow:0 0 0 4px rgba(17,166,90,.11)}
+.bitalis-app-shell :where(table){width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+.bitalis-app-shell :where(th){position:sticky;top:0;z-index:2;background:#F1F7F4;color:var(--bitalis-primary);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.bitalis-app-shell :where(th,td){padding:12px;border-bottom:1px solid var(--bitalis-border);text-align:left}
+.bitalis-app-shell :where(tr:last-child td){border-bottom:0}
+.bitalis-app-shell :where(.rounded-xl,.rounded-2xl,.rounded-3xl){isolation:isolate}
+.bitalis-app-shell :where([role="dialog"]){overscroll-behavior:contain}
+.bitalis-app-shell :where([role="status"],[role="alert"]){text-wrap:pretty}
+.bitalis-app-shell :where(img){background-color:#EEF3F0}
+.bitalis-app-shell :where(button svg,a svg){pointer-events:none}
+.bitalis-page,.bitalis-app-shell>main>main{container-type:inline-size}
+.bitalis-responsive-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.bitalis-sticky-toolbar{position:sticky;top:calc(var(--bitalis-header-height) + env(safe-area-inset-top) + 6px);z-index:25;border:1px solid var(--bitalis-border);border-radius:22px;background:rgba(250,252,251,.96);padding:8px;box-shadow:var(--bitalis-shadow-sm)}
+.bitalis-native-list{overflow:hidden;border:1px solid var(--bitalis-border);border-radius:22px;background:#fff;box-shadow:var(--bitalis-shadow-sm)}
+.bitalis-native-list>*+*{border-top:1px solid var(--bitalis-border)}
+.bitalis-native-row{display:flex;min-height:64px;align-items:center;gap:12px;padding:10px 12px}
+.bitalis-native-row:active{background:var(--bitalis-surface-soft)}
+.bitalis-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.bitalis-kpi{min-height:92px;border:1px solid var(--bitalis-border);border-radius:20px;background:#fff;padding:12px;box-shadow:var(--bitalis-shadow-sm)}
+.bitalis-fab{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(var(--bitalis-nav-height) + env(safe-area-inset-bottom) + 14px);z-index:45;display:flex;height:56px;min-width:56px;align-items:center;justify-content:center;border-radius:20px;background:var(--bitalis-action);color:#fff;box-shadow:0 14px 30px rgba(17,166,90,.3)}
+@media(max-width:639px){
+ .bitalis-app-shell :where(.sm\:p-4,.sm\:p-5,.sm\:p-6){max-width:100%}
+ .bitalis-app-shell :where(table){min-width:640px}
+ .bitalis-app-shell :where(.overflow-x-auto):has(table){border-radius:20px;border:1px solid var(--bitalis-border);background:#fff;box-shadow:var(--bitalis-shadow-sm)}
+ .bitalis-app-shell :where(input,select,textarea){font-size:16px!important}
+ .bitalis-bottom-sheet{max-height:min(88svh,760px);overflow-y:auto}
+}
+@media(min-width:640px){.bitalis-kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:1024px){
+ .bitalis-app-shell[data-shell-mode="private"]{padding-left:var(--bitalis-desktop-rail)}
+ .bitalis-app-shell[data-shell-mode="private"]>header{left:var(--bitalis-desktop-rail);width:calc(100% - var(--bitalis-desktop-rail))}
+ .bitalis-app-shell[data-shell-mode="private"]>nav{inset:auto auto 0 0!important;top:0!important;width:var(--bitalis-desktop-rail);height:100dvh;border-top:0!important;border-right:1px solid var(--bitalis-border);padding:calc(env(safe-area-inset-top) + 78px) 8px max(12px,env(safe-area-inset-bottom))!important;box-shadow:10px 0 28px rgba(6,43,36,.07)!important}
+ .bitalis-app-shell[data-shell-mode="private"]>nav>div{display:flex!important;height:100%;max-width:none!important;flex-direction:column;justify-content:flex-start;gap:6px}
+ .bitalis-app-shell[data-shell-mode="private"]>nav button{width:100%;min-height:68px;padding:6px 3px}
+ .bitalis-app-shell[data-shell-mode="private"]>nav button span{white-space:normal;line-height:1.15}
+ .bitalis-app-shell[data-shell-mode="private"]>main{padding-bottom:24px}
+ .bitalis-page{padding:24px}
+ .bitalis-bottom-sheet{border-radius:28px}
+ .bitalis-bottom-sheet::before{display:none}
+ .bitalis-sticky-toolbar{top:86px}
+}
+@media(max-width:412px){
+ .bitalis-app-shell :where(.grid-cols-3,.grid-cols-4){gap:6px}
+ .bitalis-app-shell :where(.px-4){padding-left:12px;padding-right:12px}
+ .bitalis-app-shell :where(.p-4){padding:12px}
+}
+@media(max-width:359px){
+ .bitalis-app-shell :where(button,a,[role="button"]){min-height:48px}
+ .bitalis-app-shell :where(.text-xs){line-height:1.35}
+ .bitalis-kpi{min-height:84px;padding:10px}
+}
+@media(prefers-reduced-motion:reduce){.bitalis-app-shell>main>div,.bitalis-app-shell>main>main{animation:none}}

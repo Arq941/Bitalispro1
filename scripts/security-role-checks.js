@@ -17,6 +17,9 @@ const clients = read('src/crm/client.service.ts');
 const intake = read('app/api/clients/intake/route.ts');
 const quickIntake = read('app/clients/new/QuickClientIntake.tsx');
 const androidSecurity = read('android/app/src/main/java/mx/bitalis/app/BitalisApplication.java');
+const androidActivity = read('android/app/src/main/java/mx/bitalis/app/MainActivity.java');
+const haptics = read('lib/ux/haptics.ts');
+const globalStyles = read('app/globals.css');
 const newSale = read('app/sales/new/page.tsx');
 const notifications = read('src/notifications/notifications.service.ts');
 const clientFile = read('app/clients/[id]/complete/page.tsx');
@@ -93,6 +96,12 @@ assert(androidSecurity.includes('LOCK_AFTER_BACKGROUND_MS = 2L * 60L * 1000L'),
   'Android must require biometric unlock after two minutes in background');
 assert(androidSecurity.includes('CREDENTIAL_SESSION_MS = 8L * 60L * 60L * 1000L'),
   'Android must expire retained credentials after eight hours');
+assert(androidActivity.includes('new HapticsBridge()') && androidActivity.includes('VibrationEffect.createWaveform'),
+  'Android shell must expose native semantic haptics');
+assert(haptics.includes('BitalisHaptics') && haptics.includes('installGlobalHaptics'),
+  'every interactive screen must inherit native haptic feedback');
+assert(globalStyles.includes('--bitalis-desktop-rail') && globalStyles.includes('@media(min-width:1024px)'),
+  'global UX must adapt navigation and layout for desktop');
 assert(adminAccess.includes('publicOrigin(req)'),
   'password setup links must use the public application origin');
 assert(newSale.includes('firstPaymentDate') && newSale.includes("/credit`"),
