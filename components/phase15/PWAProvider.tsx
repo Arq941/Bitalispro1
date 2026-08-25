@@ -33,7 +33,11 @@ async function registerOfflineWorker(){
   try{
     const registration=await navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});
     traceAuthTransition('pwa-offline-worker-registered',{scope:registration.scope});
-    void registration.update().catch(()=>{});
+    if(registration.waiting)traceAuthTransition('pwa-update-waiting',{scope:registration.scope});
+    registration.addEventListener('updatefound',()=>traceAuthTransition('pwa-update-found',{scope:registration.scope}));
+    // No se llama update() durante Login: Android WebView puede cambiar el
+    // controlador y descargar el documento activo. El navegador comprobará
+    // la actualización en el siguiente arranque estable.
   }catch(error){
     traceAuthTransition('pwa-offline-worker-error',{error:error instanceof Error?error.name:'unknown'});
     console.warn('No fue posible activar el modo offline de BITALIS:',error);
