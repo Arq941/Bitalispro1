@@ -1,8 +1,7 @@
 const CACHE_PREFIX='bitalis-offline-';
-const CACHE_NAME=`${CACHE_PREFIX}v5`;
+const CACHE_NAME=`${CACHE_PREFIX}v6`;
 const NAVIGATION_TIMEOUT_MS=3500;
 const CORE=[
-  '/','/dashboard','/route','/route/close','/collections','/portfolio','/clients','/clients/new','/products','/inventory','/cash','/notifications','/settings','/sync',
   '/offline.html','/manifest.json','/bitalis-logo.svg','/bitalis-symbol.svg'
 ];
 
@@ -38,7 +37,8 @@ async function networkFirst(request,options={}){
     const response=options.reload
       ?await fetch(request,{cache:'reload',credentials:'same-origin'})
       :await fetchWithTimeout(request,request.mode==='navigate'?NAVIGATION_TIMEOUT_MS:8000);
-    if(response.ok)await cache.put(request,response.clone());
+    if(!response.ok)throw new Error(`HTTP_${response.status}`);
+    await cache.put(request,response.clone());
     return response;
   }catch(error){
     const exact=await cache.match(request);
