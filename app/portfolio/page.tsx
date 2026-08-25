@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle, Banknote, CalendarClock, Camera, ChevronRight, CircleDollarSign,
@@ -127,7 +127,7 @@ export default function PortfolioPage() {
         <p className="text-[10px] font-bold text-slate-400">Ordenados por prioridad</p>
       </div>
 
-      {loading ? <CardSkeletons /> : <section className="grid gap-4 lg:grid-cols-2">
+      {loading ? <CardSkeletons /> : <section className="grid gap-2.5 lg:grid-cols-2">
         {filtered.map((item, index) => <ClientCard key={item.id} item={item} priority={index + 1} router={router} onNoPay={() => { setReason('NO_ESTABA'); setNoPay(item); haptic('tap'); }} />)}
         {!filtered.length && <div className="rounded-[28px] border border-dashed border-slate-300 bg-white p-10 text-center lg:col-span-2"><Search className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-black text-slate-600">No encontramos clientes</p><p className="mt-1 text-xs text-slate-400">Prueba otro nombre, teléfono o filtro.</p></div>}
       </section>}
@@ -149,34 +149,95 @@ function ClientCard({ item, priority, router, onNoPay }: { item: Credit; priorit
   const addressText = address ? `${address.street || ''} ${address.exteriorNumber || ''}${address.neighborhood ? ` · ${address.neighborhood}` : ''}`.trim() : '';
   const fullName = `${client.firstName} ${client.lastName} ${client.secondLastName || ''}`.trim();
   const nextDate = item.collection.nextScheduledDate ? new Date(item.collection.nextScheduledDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) : null;
+  const [offset, setOffset] = useState(0);
+  const [menu, setMenu] = useState(false);
+  const gesture = useRef<{ x: number; y: number; timer?: ReturnType<typeof setTimeout>; moved: boolean } | null>(null);
   const openRecord = () => { haptic('tap'); router.push(`/clients/${client.id}`); };
   const call = () => { if (phone) { haptic('tap'); window.location.href = `tel:${phone}`; } };
   const whatsapp = () => { if (phone) { haptic('tap'); window.open(`https://wa.me/52${phone.replace(/\D/g, '').replace(/^52/, '')}`, '_blank', 'noopener,noreferrer'); } };
   const navigate = () => { if (gps) { haptic('tap'); window.open(`https://www.google.com/maps/dir/?api=1&destination=${client.latitude},${client.longitude}&travelmode=driving`, '_blank', 'noopener,noreferrer'); } };
-  const collect = () => { if (active) { haptic('tap'); router.push(`/collections?credit=${item.id}`); } };
+  const collect = () => { if (active) { haptic('success'); router.push(`/collections?credit=${item.id}`); } };
+  const beginGesture = (event: React.PointerEvent<HTMLElement>) => {
+    if ((event.target as Element).closest('button,a')) return;
+    gesture.current = { x: event.clientX, y: event.clientY, moved: false };
+    gesture.current.timer = setTimeout(() => {
+      if (!gesture.current?.moved) { haptic('heavy'); setMenu(true); setOffset(0); }
+    }, 520);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveGesture = (event: React.PointerEvent<HTMLElement>) => {
+    if (!gesture.current) return;
+    const dx = event.clientX - gesture.current.x, dy = event.clientY - gesture.current.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      gesture.current.moved = true;
+      if (gesture.current.timer) clearTimeout(gesture.current.timer);
+    }
+    if (Math.abs(dx) > Math.abs(dy)) setOffset(Math.max(-96, Math.min(96, dx)));
+  };
+  const endGesture = () => {
+    const dx = offset;
+    if (gesture.current?.timer) clearTimeout(gesture.current.timer);
+    gesture.current = null;
+    setOffset(0);
+    if (dx >= 72 && active) collect();
+    else if (dx <= -72 && active) { haptic('warning'); onNoPay(); }
+  };
 
-  return <article className="overflow-hidden rounded-[28px] border border-[var(--bitalis-border)] bg-white shadow-[0_12px_34px_-24px_rgba(15,23,42,.45)]">
-    <button onClick={openRecord} className="group relative block h-40 w-full overflow-hidden bg-slate-100 text-left sm:h-44">
-      <EvidenceImage storageKey={client.facadeStorageKey} alt={`Fachada de ${fullName}`} className="h-full w-full !rounded-none transition duration-300 group-active:scale-[1.02]" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/5 to-slate-950/10" />
-      <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">{active && <StatusBadge tone="dark">#{priority} PRIORIDAD</StatusBadge>}{item.collection.overdue && <StatusBadge tone="red">VENCIDO</StatusBadge>}{!active && <StatusBadge tone="blue">SIN CRÉDITO</StatusBadge>}</div>
-      {!client.facadeStorageKey && <div className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-500"><Camera className="h-4 w-4" /></div>}
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4 text-white"><div className="min-w-0"><h2 className="truncate text-xl font-black">{fullName}</h2><p className="mt-0.5 text-[10px] font-bold text-white/70">{client.clientNumber}</p></div><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur"><ChevronRight className="h-5 w-5" /></div></div>
-    </button>
-    <div className="p-4">
-      <div className="min-w-0"><div className="flex items-center gap-2"><RiskBadge risk={client.riskLevel || 'LOW'} /><span className="truncate text-[10px] font-bold text-slate-400">{active ? item.activeCreditCount && item.activeCreditCount > 1 ? `${item.activeCreditCount} créditos activos` : 'Crédito activo' : String(client.status || 'Prospecto').replaceAll('_', ' ')}</span></div>{addressText ? <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold leading-4 text-slate-600"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" /><span className="line-clamp-2">{addressText}</span></p> : <p className="mt-2 text-xs font-semibold text-amber-700">Domicilio pendiente de completar</p>}</div>
-      <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50"><ValueBlock icon={<CircleDollarSign />} label={active ? 'Saldo total' : 'Estado'} value={active ? money.format(item.saldoActual) : 'Sin saldo'} /><ValueBlock icon={<CalendarClock />} label={active ? nextDate ? `Próximo · ${nextDate}` : 'Cobro sugerido' : 'Próxima acción'} value={active ? money.format(item.suggestedInstallment || 0) : client.status === 'PROSPECT' ? 'Completar / vender' : 'Ver expediente'} green={active} /></div>
-      <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-2"><button disabled={!active} onClick={collect} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-[var(--bitalis-action)] px-4 text-sm font-black text-white shadow-sm active:scale-[.98] disabled:bg-slate-200 disabled:text-slate-400"><Banknote className="h-5 w-5" />{active ? 'Cobrar' : 'Sin cobro'}</button><NativeAction label="Llamar" icon={<Phone />} disabled={!phone} onClick={call} /><NativeAction label="WhatsApp" icon={<MessageCircle />} disabled={!phone} onClick={whatsapp} /><NativeAction label="Navegar" icon={<Navigation />} disabled={!gps} onClick={navigate} /></div>
-      <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={!active} onClick={onNoPay} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 text-xs font-black text-amber-800 active:scale-[.98] disabled:opacity-40"><UserX className="h-4 w-4" />No pagó</button><button onClick={openRecord} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-xs font-black text-[var(--bitalis-primary)] active:scale-[.98]"><Users className="h-4 w-4" />Expediente</button></div>
-    </div>
+  return <article className="relative overflow-hidden rounded-[22px] border border-[var(--bitalis-border)] bg-slate-100 shadow-[0_10px_28px_-24px_rgba(15,23,42,.55)]">
+    <div className="absolute inset-y-0 left-0 flex w-24 items-center justify-center bg-emerald-600 text-xs font-black text-white"><Banknote className="mr-1 h-5 w-5" />COBRAR</div>
+    <div className="absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-amber-500 text-xs font-black text-slate-950"><UserX className="mr-1 h-5 w-5" />NO PAGÓ</div>
+    <section
+      onPointerDown={beginGesture}
+      onPointerMove={moveGesture}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
+      style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
+      className="relative bg-white p-3 transition-transform duration-150"
+      aria-label={`${fullName}. Desliza a la derecha para cobrar o a la izquierda para registrar no pagó.`}
+    >
+      <div className="flex min-w-0 gap-3">
+        <button onClick={openRecord} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100" aria-label={`Abrir expediente de ${fullName}`}>
+          <EvidenceImage storageKey={client.facadeStorageKey} alt={`Fachada de ${fullName}`} className="h-full w-full object-cover !rounded-none" />
+          {!client.facadeStorageKey && <Camera className="absolute inset-0 m-auto h-5 w-5 text-slate-400" />}
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <button onClick={openRecord} className="min-w-0 text-left"><h2 className="truncate text-[15px] font-black leading-5 text-[var(--bitalis-primary)]">{fullName}</h2><p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{client.clientNumber}</p></button>
+            <div className="flex shrink-0 gap-1">{active && <StatusBadge tone="dark">#{priority}</StatusBadge>}{item.collection.overdue && <StatusBadge tone="red">VENCIDO</StatusBadge>}</div>
+          </div>
+          <div className="mt-1 flex items-center gap-2"><RiskBadge risk={client.riskLevel || 'LOW'} /><span className="truncate text-[9px] font-bold text-slate-400">{nextDate ? `Próximo ${nextDate}` : active ? 'Cobro pendiente' : 'Sin crédito'}</span></div>
+          <p title={addressText} className="mt-1 flex min-w-0 items-center gap-1 text-[11px] font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-700" /><span className="truncate">{addressText || 'Domicilio pendiente'}</span></p>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-[1fr_1fr_auto] items-stretch overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+        <div className="px-3 py-2"><p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Cobrar ahora</p><p className="text-lg font-black leading-5 text-emerald-700">{active ? money.format(item.suggestedInstallment || 0) : '—'}</p></div>
+        <div className="border-l border-slate-200 px-3 py-2"><p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Saldo pendiente</p><p className="text-lg font-black leading-5 text-[var(--bitalis-primary)]">{active ? money.format(item.saldoActual) : 'Sin saldo'}</p></div>
+        <button disabled={!active} onClick={collect} className="flex min-h-12 min-w-24 items-center justify-center gap-1.5 bg-[var(--bitalis-action)] px-3 text-xs font-black text-white active:scale-[.98] disabled:bg-slate-200 disabled:text-slate-400"><Banknote className="h-4 w-4" />Cobrar</button>
+      </div>
+
+      <div className="mt-1 flex items-center justify-between">
+        <p className="text-[9px] font-bold text-slate-400">↔ Desliza · mantén pulsado para más acciones</p>
+        <button onClick={() => { haptic('tap'); setMenu((value) => !value); }} className="flex min-h-12 items-center px-3 text-[10px] font-black text-[var(--bitalis-primary)]" aria-expanded={menu}>MÁS</button>
+      </div>
+
+      {menu && <div className="absolute inset-x-2 bottom-2 z-10 flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+        <NativeAction label="Llamar" icon={<Phone />} disabled={!phone} onClick={call} />
+        <NativeAction label="WhatsApp" icon={<MessageCircle />} disabled={!phone} onClick={whatsapp} />
+        <NativeAction label="Navegar" icon={<Navigation />} disabled={!gps} onClick={navigate} />
+        <NativeAction label="Expediente" icon={<Users />} onClick={openRecord} />
+        <button onClick={() => setMenu(false)} className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100" aria-label="Cerrar acciones"><X className="h-4 w-4" /></button>
+      </div>}
+    </section>
   </article>;
 }
 
-function NativeAction({ label, icon, disabled, onClick }: { label: string; icon: React.ReactNode; disabled?: boolean; onClick: () => void }) { return <button disabled={disabled} onClick={onClick} title={label} aria-label={label} className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-[var(--bitalis-primary)] shadow-sm active:scale-95 disabled:opacity-30 [&>svg]:h-5 [&>svg]:w-5">{icon}</button>; }
+function NativeAction({ label, icon, disabled, onClick }: { label: string; icon: React.ReactNode; disabled?: boolean; onClick: () => void }) { return <button disabled={disabled} onClick={onClick} title={label} aria-label={label} className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-[var(--bitalis-primary)] active:scale-95 disabled:opacity-30 [&>svg]:h-5 [&>svg]:w-5">{icon}</button>; }
+
 function NoPaySheet({ client, reason, saving, onReason, onClose, onConfirm }: { client: Credit; reason: string; saving: boolean; onReason: (value: string) => void; onClose: () => void; onConfirm: () => void }) { return <div className="fixed inset-0 z-[170] flex items-end bg-black/50 backdrop-blur-[2px]" onClick={onClose}><section className="bitalis-bottom-sheet bitalis-safe-bottom w-full p-4 pb-6" onClick={(event) => event.stopPropagation()}><div className="mx-auto max-w-xl"><div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" /><div className="flex justify-between"><div><p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Visita de cobranza</p><p className="mt-1 text-xl font-black text-[var(--bitalis-primary)]">Registrar No pagó</p><p className="text-xs text-slate-500">{client.client.firstName} {client.client.lastName}</p></div><button disabled={saving} onClick={onClose} className="h-12 w-12 rounded-full bg-slate-100"><X className="mx-auto h-5 w-5" /></button></div><p className="mt-4 text-xs font-black uppercase text-slate-500">Selecciona el motivo</p><div className="mt-2 grid grid-cols-2 gap-2">{reasons.map(([value, label]) => <button key={value} onClick={() => { haptic('tap'); onReason(value); }} className={`min-h-12 rounded-2xl border px-3 text-xs font-bold ${reason === value ? 'border-amber-500 bg-amber-50 text-amber-900 ring-2 ring-amber-100' : 'border-slate-200'}`}>{label}</button>)}</div><button disabled={saving} onClick={onConfirm} className="mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--bitalis-primary)] font-black text-white active:scale-[.99]">{saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <MapPin className="h-5 w-5" />}CONFIRMAR CON UBICACIÓN</button></div></section></div>; }
 function Metric({ icon, label, value, danger }: { icon: React.ReactNode; label: string; value: string; danger?: boolean }) { return <div className="border-r border-t border-white/10 p-3 last:border-r-0 sm:border-t-0"><div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-emerald-50/65"><span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>{label}</div><p className={`mt-1 truncate text-lg font-black ${danger ? 'text-amber-300' : ''}`}>{value}</p></div>; }
 function ValueBlock({ icon, label, value, green }: { icon: React.ReactNode; label: string; value: string; green?: boolean }) { return <div className="min-w-0 border-r border-slate-200 p-3 last:border-r-0"><p className="flex items-center gap-1 text-[9px] font-black uppercase text-slate-400"><span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>{label}</p><p className={`mt-1 truncate text-base font-black ${green ? 'text-emerald-700' : 'text-[var(--bitalis-primary)]'}`}>{value}</p></div>; }
 function RiskBadge({ risk }: { risk: string }) { const style = risk === 'CRITICAL' ? 'bg-red-100 text-red-800' : risk === 'HIGH' ? 'bg-orange-100 text-orange-800' : risk === 'MEDIUM' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'; return <span className={`rounded-full px-2.5 py-1 text-[9px] font-black ${style}`}>RIESGO {risk === 'CRITICAL' ? 'CRÍTICO' : risk === 'HIGH' ? 'ALTO' : risk === 'MEDIUM' ? 'MEDIO' : 'BAJO'}</span>; }
 function StatusBadge({ children, tone }: { children: React.ReactNode; tone: 'dark' | 'red' | 'blue' }) { const style = tone === 'red' ? 'bg-red-600 text-white' : tone === 'blue' ? 'bg-blue-600 text-white' : 'bg-slate-950/65 text-white backdrop-blur'; return <span className={`rounded-full px-2.5 py-1 text-[9px] font-black shadow-sm ${style}`}>{children}</span>; }
 function Chip({ active, label, onClick, alert }: { active: boolean; label: string; onClick: () => void; alert?: boolean }) { return <button onClick={onClick} className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-black transition active:scale-95 ${active ? alert ? 'bg-red-600 text-white' : 'bg-[var(--bitalis-primary)] text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>{label}</button>; }
-function CardSkeletons() { return <div className="grid gap-4 lg:grid-cols-2">{[1, 2].map((item) => <div key={item} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white"><div className="h-40 animate-pulse bg-slate-200" /><div className="space-y-3 p-4"><div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" /><div className="h-16 animate-pulse rounded-2xl bg-slate-100" /><div className="h-14 animate-pulse rounded-2xl bg-slate-100" /></div></div>)}</div>; }
+function CardSkeletons() { return <div className="grid gap-2.5 lg:grid-cols-2">{[1, 2].map((item) => <div key={item} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white"><div className="h-40 animate-pulse bg-slate-200" /><div className="space-y-3 p-4"><div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" /><div className="h-16 animate-pulse rounded-2xl bg-slate-100" /><div className="h-14 animate-pulse rounded-2xl bg-slate-100" /></div></div>)}</div>; }
