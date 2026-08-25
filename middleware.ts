@@ -55,16 +55,6 @@ function jsonError(message:string,status:number){
 
 export async function middleware(req:NextRequest){
   const path=req.nextUrl.pathname;
-
-  // La recuperación de entrega necesita invalidar también la caché HTTP del
-  // navegador. `Clear-Site-Data: \"cache\"` no borra cookies, sesión, IndexedDB
-  // ni la cola offline; únicamente obliga a descargar nuevamente los assets.
-  if(!path.startsWith('/api/')&&req.nextUrl.searchParams.has('__bitalis_recover')){
-    const response=NextResponse.next();
-    response.headers.set('Clear-Site-Data','\"cache\"');
-    response.headers.set('Cache-Control','no-store, max-age=0');
-    return response;
-  }
   const declaredLength=Number(req.headers.get('content-length')||'0');
   const maxBytes=path==='/api/clients/intake'||path.includes('/media')||path.includes('/images')?25*1024*1024:2*1024*1024;
   if(Number.isFinite(declaredLength)&&declaredLength>maxBytes)return jsonError('La solicitud excede el tamaño permitido.',413);
@@ -91,4 +81,4 @@ export async function middleware(req:NextRequest){
   return response;
 }
 
-export const config={matcher:['/api/:path*','/((?!_next/static|_next/image|favicon.ico).*)']};
+export const config={matcher:['/api/:path*']};
