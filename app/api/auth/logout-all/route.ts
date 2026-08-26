@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Token inválido o expirado' }, { status: 401 });
     }
 
-    const revokedCount = AuthService.logoutAll(decoded.sub);
+    const revokedCount = await AuthService.logoutAll(decoded.sub);
     const response=NextResponse.json({
       success: true,
       revokedSessionsCount: revokedCount,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 
 function statusFromError(error: unknown) {
@@ -12,7 +12,7 @@ function statusFromError(error: unknown) {
 
 export async function GET(req: NextRequest) {
   try {
-    const ctx = getSalesUserContext(req);
+    const ctx = await extractUserContext(req);
     if (ctx.role !== 'SUPERVISORA' && ctx.role !== 'ADMIN') {
       return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 });
     }

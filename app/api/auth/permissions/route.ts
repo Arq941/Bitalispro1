@@ -1,10 +1,10 @@
 import {NextRequest,NextResponse} from 'next/server';
 import {PermissionService} from '@/src/server/auth/permission.service';
-import {getSalesUserContext} from '@/src/sales/sales-auth.helper';
+import {extractUserContext} from '@/src/sales/sales-auth.helper';
 
 export async function GET(req:NextRequest){
  try{
-  const ctx=getSalesUserContext(req);
+  const ctx=await extractUserContext(req);
   const permissionCodes=await PermissionService.getEffectivePermissionCodes(ctx.userId);
   return NextResponse.json({success:true,permissionCodes});
  }catch(e:any){

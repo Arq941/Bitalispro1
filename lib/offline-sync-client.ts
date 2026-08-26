@@ -21,6 +21,30 @@ export function offlineIdentity(){
   return userId?{userId,deviceId}:null;
 }
 
+export async function queueOfflineOperation(
+  operationType: OfflineOperation['operationType'],
+  payload: unknown,
+  idempotencyKey: string,
+) {
+  const identity = offlineIdentity();
+  if (!identity) throw new Error('Inicia sesión antes de guardar una captura sin conexión.');
+  const clientCapturedAt =
+    payload && typeof payload === 'object' && 'clientCapturedAt' in payload
+      ? String((payload as {clientCapturedAt?: unknown}).clientCapturedAt || new Date().toISOString())
+      : new Date().toISOString();
+  const operation = await offlineStorage.create({
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    idempotencyKey,
+    operationType,
+    payload,
+    clientCapturedAt,
+    userId: identity.userId,
+    deviceId: identity.deviceId,
+  });
+  window.dispatchEvent(new Event('bitalis:offline-queue-changed'));
+  return operation;
+}
+
 function clientIntakeForm(op:OfflineOperation){
   const form=new FormData();
   const payload=(op.payload&&typeof op.payload==='object'?op.payload:{}) as Record<string,unknown>;

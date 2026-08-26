@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SalesService } from '@/src/sales/sales.service';
 import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 import { PaymentCalendarService } from '@/src/financial/payment-calendar.service';
 
@@ -14,13 +14,13 @@ const DAY_INDEX: Record<string,number> = {DOMINGO:0,LUNES:1,MARTES:2,MIERCOLES:3
 function alignToDay(date:Date,day?:unknown){const normalized=String(day||'').trim().toUpperCase();if(!normalized)return date;if(DAY_INDEX[normalized]===undefined)throw new Error('Selecciona un día de cobro válido.');const next=new Date(date);const delta=(DAY_INDEX[normalized]-next.getUTCDay()+7)%7;next.setUTCDate(next.getUTCDate()+delta);return next;}
 
 export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
- try{const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');const{id}=await params;const sale=await SalesService.getSaleById(id);if(!sale)return NextResponse.json({error:'Venta no encontrada'},{status:404});const credits=sale.credits||[];const schedules=credits.flatMap((c:any)=>c.schedules||[]);return NextResponse.json({saleId:id,creditsCount:credits.length,schedulesCount:schedules.length,schedules},{status:200});}
+ try{const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');const{id}=await params;const sale=await SalesService.getSaleById(id);if(!sale)return NextResponse.json({error:'Venta no encontrada'},{status:404});const credits=sale.credits||[];const schedules=credits.flatMap((c:any)=>c.schedules||[]);return NextResponse.json({saleId:id,creditsCount:credits.length,schedulesCount:schedules.length,schedules},{status:200});}
  catch(err:any){return NextResponse.json({error:err.message||'Error al obtener el calendario de pagos'},{status:codeFromError(err)});}
 }
 
 export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
-  const ctx=getSalesUserContext(req);if(ctx.role!=='ADMIN'&&ctx.role!=='SUPERVISORA')return NextResponse.json({error:'FORBIDDEN: Solo ADMIN o SUPERVISORA pueden modificar la primera fecha de cobro.'},{status:403});
+  const ctx=await extractUserContext(req);if(ctx.role!=='ADMIN'&&ctx.role!=='SUPERVISORA')return NextResponse.json({error:'FORBIDDEN: Solo ADMIN o SUPERVISORA pueden modificar la primera fecha de cobro.'},{status:403});
   const{id}=await params;const body=await req.json();
   const sale=await prisma.sale.findUnique({where:{id},include:{credits:{include:{schedules:{orderBy:{installmentNumber:'asc'}}}}}});if(!sale)return NextResponse.json({error:'Venta no encontrada.'},{status:404});if(!sale.credits.length)return NextResponse.json({error:'La venta todavía no tiene crédito ni calendario.'},{status:409});
   const paymentCount=await prisma.payment.count({where:{credit:{saleId:id}}});const started=paymentCount>0||sale.credits.some(c=>c.schedules.some(s=>['PARTIAL','COMPLETED'].includes(String(s.status))));

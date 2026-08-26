@@ -1,11 +1,19 @@
+import {PrismaService} from '@/src/database/prisma.service';
+
 export class HealthService {
-  public static getHealth() {
+  private static async database(){
+    try{await PrismaService.getInstance().$queryRawUnsafe('SELECT 1');return'connected' as const;}
+    catch{return'unavailable' as const;}
+  }
+
+  public static async getHealth() {
+    const database=await this.database();
     return {
-      status: 'ok',
+      status: database==='connected'?'ok':'degraded',
       environment: process.env.NODE_ENV || 'production',
       timestamp: new Date().toISOString(),
-      database: 'connected',
-      storage: 'available',
+      database,
+      storage: process.env.MEDIA_STORAGE_PATH?'configured':'local',
     };
   }
 
@@ -17,11 +25,11 @@ export class HealthService {
     };
   }
 
-  public static getReady() {
+  public static async getReady() {
+    const database=await this.database();
     return {
-      status: 'ready',
-      database: 'connected',
-      supabase: 'available',
+      status: database==='connected'?'ready':'not_ready',
+      database,
       timestamp: new Date().toISOString(),
     };
   }

@@ -2,5 +2,6 @@ import { NextResponse } from 'next/server';
 import { HealthService } from '@/src/health/health.service';
 
 export async function GET() {
-  return NextResponse.json(HealthService.getReady());
+  const health=await HealthService.getReady();
+  return NextResponse.json(health,{status:health.status==='ready'?200:503});
 }

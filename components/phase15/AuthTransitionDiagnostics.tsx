@@ -89,12 +89,9 @@ export default function AuthTransitionDiagnostics(){
     };
   },[]);
 
-  if(pathname==='/diagnostics-transition')return null;
-  return <button
-    type="button"
-    onClick={()=>router.push('/diagnostics-transition')}
-    className="bitalis-floating-action bitalis-floating-action-left z-[78] border border-emerald-200 bg-white/96 text-[var(--bitalis-primary)] shadow-lg"
-    aria-label="Abrir diagnóstico de transición"
-    title="Diagnóstico"
-  ><span className="hidden min-[370px]:inline">DIAG</span><span className="min-[370px]:hidden">D</span></button>;
+  // El diagnóstico permanece disponible para administración en Configuración.
+  // No se muestra como FAB porque cubría acciones operativas en pantallas pequeñas.
+  void pathname;
+  void router;
+  return null;
 }

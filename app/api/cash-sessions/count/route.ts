@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 
 export async function POST(req: NextRequest) {
   try {
-    const user = getSalesUserContext(req);
+    const user = await extractUserContext(req);
     const body = await req.json();
     if (!body.cashSessionId) return NextResponse.json({ error: 'cashSessionId is required' }, { status: 400 });
     const result = await CashService.createCashCount({

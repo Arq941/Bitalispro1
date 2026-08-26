@@ -44,7 +44,7 @@ async function networkFirst(request,options={}){
       ?await fetch(request,{cache:'reload',credentials:'same-origin'})
       :await fetchWithTimeout(request,request.mode==='navigate'?NAVIGATION_TIMEOUT_MS:8000);
     if(!response.ok)throw new Error(`HTTP_${response.status}`);
-    await cache.put(request,response.clone());
+    if(options.cacheResponse!==false)await cache.put(request,response.clone());
     return response;
   }catch(error){
     // Coincidencia exacta: nunca mezclar documentos RSC, consultas o rutas de otro estado.
@@ -81,7 +81,9 @@ self.addEventListener('fetch',event=>{
   if(url.pathname.startsWith('/api/')||url.pathname==='/build-version.txt')return;
 
   if(request.mode==='navigate'){
-    event.respondWith(networkFirst(request));
+    // Nunca conservar HTML/RSC: un documento anterior puede apuntar a chunks
+    // que ya no existen después de un despliegue. Offline usa el shell estable.
+    event.respondWith(networkFirst(request,{cacheResponse:false}));
     return;
   }
   if(url.pathname.startsWith('/_next/static/')){
@@ -90,7 +92,7 @@ self.addEventListener('fetch',event=>{
     return;
   }
   if(url.pathname.startsWith('/_next/')||url.searchParams.has('_rsc')){
-    event.respondWith(networkFirst(request));
+    event.respondWith(networkFirst(request,{cacheResponse:false}));
     return;
   }
   event.respondWith(staleWhileRevalidate(request));

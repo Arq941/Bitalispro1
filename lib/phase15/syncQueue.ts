@@ -34,8 +34,9 @@ export async function syncQueuedOperations():Promise<SyncSummary>{
       window.dispatchEvent(new CustomEvent('bitalis:operation-synced',{detail:{...row,response:json}}));
     }catch(e:any){
       if(e?.status===409){
-        await removeQueued(row.id);synced++;
-        window.dispatchEvent(new CustomEvent('bitalis:operation-synced',{detail:{...row,response:{conflict:true}}}));
+        failed++;
+        await updateQueued({...working,state:'CONFLICT',lastError:'El servidor detectó un conflicto. Requiere revisión antes de retirar esta operación.'});
+        window.dispatchEvent(new CustomEvent('bitalis:operation-conflict',{detail:{...row,error:e?.message}}));
         continue;
       }
       failed++;

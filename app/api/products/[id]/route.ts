@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 
 const prisma=PrismaService.getInstance();
@@ -11,12 +11,12 @@ const priceTypes=['LIST','LIST_PRICE','MINIMUM_AUTHORIZED','CREDIT','CASH'] as c
 function statusFromError(error:unknown,fallback=400){const message=String((error as any)?.message||'');if(message.includes('UNAUTHORIZED'))return 401;if(message.includes('FORBIDDEN'))return 403;if(message.includes('P2002')||message.includes('Ya existe'))return 409;return fallback;}
 
 export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
- try{const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.view');const{id}=await params;const product=await prisma.product.findUnique({where:{id},include:{category:true,images:true,prices:true,stocks:true}});if(!product)return NextResponse.json({success:false,error:'Producto no encontrado.'},{status:404});return NextResponse.json({success:true,product});}catch(err:any){return NextResponse.json({success:false,error:err.message},{status:statusFromError(err,500)});}
+ try{const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.view');const{id}=await params;const product=await prisma.product.findUnique({where:{id},include:{category:true,images:true,prices:true,stocks:true}});if(!product)return NextResponse.json({success:false,error:'Producto no encontrado.'},{status:404});return NextResponse.json({success:true,product});}catch(err:any){return NextResponse.json({success:false,error:err.message},{status:statusFromError(err,500)});}
 }
 
 export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
-  const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const{id}=await params;
+  const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const{id}=await params;
   const current=await prisma.product.findUnique({where:{id},include:{prices:true}});if(!current)return NextResponse.json({success:false,error:'Producto no encontrado.'},{status:404});
   const body=await req.json();const sku=body.sku===undefined?current.sku:String(body.sku).trim();const name=body.name===undefined?current.name:String(body.name).trim();if(!sku||!name)throw new Error('SKU y nombre son obligatorios.');
   const status=body.status===undefined?current.status:String(body.status).toUpperCase();if(!statuses.includes(status as any))throw new Error('Estado de producto inválido.');
@@ -32,7 +32,7 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
 
 export async function DELETE(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
-  const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const{id}=await params;
+  const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const{id}=await params;
   const product=await prisma.product.findUnique({where:{id},select:{id:true,sku:true,name:true,status:true,stocks:{select:{quantityOnHand:true,quantityReserved:true}},_count:{select:{saleItems:true,orderItems:true,kardexMovements:true,reservations:true,priceHistories:true,authorizationRequests:true}}}});
   if(!product)return NextResponse.json({success:false,error:'Producto no encontrado.'},{status:404});
   const linked=product._count.saleItems+product._count.orderItems+product._count.kardexMovements+product._count.reservations+product._count.priceHistories+product._count.authorizationRequests;const hasStock=product.stocks.some(s=>Number(s.quantityOnHand)!==0||Number(s.quantityReserved)!==0);
