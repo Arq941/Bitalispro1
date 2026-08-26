@@ -58,6 +58,14 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  async redirects(){
+    return [
+      {source:'/reportes',destination:'/reports',permanent:true},
+      {source:'/reportes/:path*',destination:'/reports/:path*',permanent:true},
+      {source:'/cartera',destination:'/portfolio',permanent:true},
+      {source:'/cartera/:path*',destination:'/portfolio/:path*',permanent:true},
+    ];
+  },
   async headers(){
     return [
       {
