@@ -1,0 +1,31 @@
+'use client';
+import {FormEvent,useEffect,useState} from 'react';
+import {AlertTriangle,CalendarClock,CheckCircle2,Loader2,PackagePlus} from 'lucide-react';
+import AppShell from '@/components/phase15/AppShell';
+import {apiClient} from '@/lib/phase15/apiClient';
+
+export default function LotsPage(){
+ const[lots,setLots]=useState<any[]>([]),[products,setProducts]=useState<any[]>([]),[warehouses,setWarehouses]=useState<any[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const[form,setForm]=useState({productId:'',warehouseId:'',lotNumber:'',quantity:'1',expirationDate:'',supplierName:'',unitCost:''});
+ const load=async()=>{setLoading(true);try{const[a,b,c]:any[]=await Promise.all([apiClient('/api/inventory/lots?days=90'),apiClient('/api/products'),apiClient('/api/warehouses')]);setLots(a?.data||[]);setProducts((b?.products||[]).filter((x:any)=>x.status!=='DISCONTINUED'));setWarehouses((c?.warehouses||[]).filter((x:any)=>x.isActive!==false));}catch(e:any){setError(e.message)}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[]);
+ const submit=async(e:FormEvent)=>{e.preventDefault();setSaving(true);setError('');try{await apiClient('/api/inventory/lots',{method:'POST',body:JSON.stringify({...form,quantity:Number(form.quantity),unitCost:form.unitCost?Number(form.unitCost):null})});setNotice('Lote registrado; existencia y Kardex actualizados.');setForm(x=>({...x,lotNumber:'',quantity:'1',expirationDate:'',supplierName:'',unitCost:''}));await load()}catch(e:any){setError(e.message)}finally{setSaving(false)}};
+ return <AppShell title="Lotes y caducidad"><main className="mx-auto max-w-6xl px-3 py-3 sm:px-4 sm:py-5">
+  <section className="rounded-[28px] bg-[var(--bitalis-primary)] p-4 text-white sm:p-5"><p className="text-[10px] font-black uppercase tracking-[.14em] text-[var(--bitalis-mint)]">Trazabilidad FEFO</p><h1 className="mt-1 text-2xl font-black">Lotes y caducidad</h1><p className="mt-1 text-xs text-emerald-50/80">Las entregas consumen primero el lote que caduca antes. Las entradas actualizan existencia y Kardex en una sola transacción.</p></section>
+  {error&&<Notice error text={error}/>} {notice&&<Notice text={notice}/>}
+  <form onSubmit={submit} className="mt-3 grid gap-3 rounded-[24px] border bg-white p-4 md:grid-cols-2 lg:grid-cols-4">
+   <Field label="Producto *"><select required value={form.productId} onChange={e=>setForm({...form,productId:e.target.value})} className="control"><option value="">Seleccionar</option>{products.map(x=><option key={x.id} value={x.id}>{x.name} · {x.sku}</option>)}</select></Field>
+   <Field label="Almacén *"><select required value={form.warehouseId} onChange={e=>setForm({...form,warehouseId:e.target.value})} className="control"><option value="">Seleccionar</option>{warehouses.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+   <Field label="Número de lote *"><input required value={form.lotNumber} onChange={e=>setForm({...form,lotNumber:e.target.value})} className="control uppercase"/></Field>
+   <Field label="Cantidad *"><input required type="number" min="1" step="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} className="control"/></Field>
+   <Field label="Caducidad"><input type="date" value={form.expirationDate} onChange={e=>setForm({...form,expirationDate:e.target.value})} className="control"/></Field>
+   <Field label="Proveedor"><input value={form.supplierName} onChange={e=>setForm({...form,supplierName:e.target.value})} className="control"/></Field>
+   <Field label="Costo unitario"><input type="number" min="0" step=".01" value={form.unitCost} onChange={e=>setForm({...form,unitCost:e.target.value})} className="control"/></Field>
+   <button disabled={saving} className="min-h-14 self-end rounded-2xl bg-[var(--bitalis-action)] px-4 text-xs font-black text-white disabled:opacity-50">{saving?<Loader2 className="mx-auto h-5 w-5 animate-spin"/>:<span className="flex items-center justify-center gap-2"><PackagePlus className="h-4 w-4"/>REGISTRAR ENTRADA</span>}</button>
+  </form>
+  {loading?<Loader2 className="mx-auto mt-12 h-7 w-7 animate-spin"/>:<section className="mt-3 grid gap-2 lg:grid-cols-2">{lots.map(lot=>{const expired=lot.expired,soon=lot.expiringSoon;return <article key={lot.id} className={`rounded-2xl border p-3 ${expired?'border-red-200 bg-red-50':soon?'border-amber-200 bg-amber-50':'border-slate-200 bg-white'}`}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-black text-[var(--bitalis-primary)]">{lot.product?.name}</p><p className="text-[10px] font-bold text-slate-500">{lot.warehouse?.name} · LOTE {lot.lotNumber}</p><p className="mt-1 flex items-center gap-1 text-xs"><CalendarClock className="h-4 w-4"/>{lot.expirationDate?new Date(lot.expirationDate).toLocaleDateString('es-MX'):'Sin caducidad registrada'}</p></div><div className="text-right"><b className="text-xl text-[var(--bitalis-primary)]">{lot.quantityAvailable}</b><p className="text-[8px] font-black uppercase text-slate-400">disponibles</p></div></div>{(expired||soon)&&<p className={`mt-2 text-[10px] font-black uppercase ${expired?'text-red-700':'text-amber-800'}`}>{expired?'CADUCADO · BLOQUEAR ENTREGA':'CADUCA PRONTO · PRIORIDAD FEFO'}</p>}</article>})}{!lots.length&&<p className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500 lg:col-span-2">Todavía no hay lotes registrados.</p>}</section>}
+  <style jsx>{`.control{margin-top:.4rem;min-height:3.5rem;width:100%;border-radius:1rem;border:1px solid #e2e8f0;background:#f8fafc;padding:0 .9rem;font-size:.875rem}`}</style>
+ </main></AppShell>;
+}
+function Field({label,children}:{label:string;children:React.ReactNode}){return <label><span className="text-xs font-black text-slate-500">{label}</span>{children}</label>}
+function Notice({text,error}:{text:string;error?:boolean}){return <div className={`mt-3 flex gap-2 rounded-2xl border p-3 text-sm font-bold ${error?'border-red-200 bg-red-50 text-red-700':'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error?<AlertTriangle className="h-5 w-5"/>:<CheckCircle2 className="h-5 w-5"/>}{text}</div>}
