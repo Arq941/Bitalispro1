@@ -1,0 +1,104 @@
+name: BITALIS Encrypted Database Backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 10 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bitalis-encrypted-database-backup
+  cancel-in-progress: false
+
+jobs:
+  encrypted-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+      BACKUP_KEY: ${{ secrets.BITALIS_BACKUP_ENCRYPTION_KEY }}
+    steps:
+      - name: Check encrypted backup readiness
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::Respaldo deshabilitado: falta HOSTINGER_DATABASE_URL."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif [ "${#BACKUP_KEY}" -lt 32 ]; then
+            echo "::notice::Respaldo deshabilitado: falta BITALIS_BACKUP_ENCRYPTION_KEY de al menos 32 caracteres."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install MySQL client
+        if: steps.preflight.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Create consistent encrypted backup
+        if: steps.preflight.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from urllib.parse import urlparse, unquote
+          parsed=urlparse(os.environ['DATABASE_URL'])
+          if parsed.scheme not in ('mysql','mysql2'):
+              raise SystemExit('HOSTINGER_DATABASE_URL no es MySQL')
+          cfg=Path(os.environ['RUNNER_TEMP'])/'bitalis-backup.cnf'
+          cfg.write_text('[client]\n'
+                         f'host={parsed.hostname}\n'
+                         f'port={parsed.port or 3306}\n'
+                         f'user={unquote(parsed.username or "")}\n'
+                         f'password={unquote(parsed.password or "")}\n'
+                         'ssl-mode=REQUIRED\n')
+          cfg.chmod(0o600)
+          Path(os.environ['RUNNER_TEMP'],'bitalis-db-name').write_text((parsed.path or '').lstrip('/'))
+          PY
+          db_name="$(cat "$RUNNER_TEMP/bitalis-db-name")"
+          test -n "$db_name"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          plain="$RUNNER_TEMP/bitalis-$stamp.sql.gz"
+          encrypted="backup/bitalis-$stamp.sql.gz.enc"
+
+          mysqldump --defaults-extra-file="$RUNNER_TEMP/bitalis-backup.cnf"             --single-transaction --quick --routines --triggers --events             --set-gtid-purged=OFF --no-tablespaces "$db_name" | gzip -9 > "$plain"
+          test -s "$plain"
+          gzip -t "$plain"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000             -in "$plain" -out "$encrypted" -pass env:BACKUP_KEY
+          test -s "$encrypted"
+          sha256sum "$encrypted" > "$encrypted.sha256"
+          {
+            echo "created_at=$stamp"
+            echo "database=$db_name"
+            echo "encryption=aes-256-cbc-pbkdf2-iter200000"
+            echo "archive=$(basename "$encrypted")"
+          } > backup/manifest.txt
+
+      - name: Verify encrypted archive
+        if: steps.preflight.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          encrypted="$(find backup -name '*.enc' -type f -print -quit)"
+          test -n "$encrypted"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000             -in "$encrypted" -out "$RUNNER_TEMP/verify.sql.gz" -pass env:BACKUP_KEY
+          gzip -t "$RUNNER_TEMP/verify.sql.gz"
+
+      - name: Store encrypted backup
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitalis-encrypted-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 14
+          if-no-files-found: error
