@@ -32,7 +32,7 @@ export class NotificationAbacService {
     if (!userContext || !userContext.role) return false;
     const role = userContext.role.toUpperCase();
 
-    if (role === 'ADMIN' || role === 'SUPER_ADMIN') return true;
+    if (role === 'ADMIN') return true;
 
     if (notification.userId && notification.userId === userContext.userId) {
       return true;
@@ -62,7 +62,7 @@ export class NotificationAbacService {
 export class NotificationService {
   static async ensureOperationalNotices(userContext: { userId: string; role: string }) {
     const role = String(userContext.role || '').toUpperCase();
-    if (!['COBRADOR', 'VENDEDORA', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) return;
+    if (!['COBRADOR', 'SUPERVISORA', 'ADMIN'].includes(role)) return;
 
     try {
       const prisma = PrismaService.getInstance();
@@ -70,7 +70,7 @@ export class NotificationService {
       const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
 
-      if (['COBRADOR', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      if (['COBRADOR', 'SUPERVISORA', 'ADMIN'].includes(role)) {
         const schedules = await prisma.paymentSchedule.findMany({
           where: {
             scheduledDate: { lte: endOfDay },
@@ -102,7 +102,7 @@ export class NotificationService {
         }
       }
 
-      if (['VENDEDORA', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      if (['SUPERVISORA', 'ADMIN'].includes(role)) {
         const stocks = await prisma.inventoryStock.findMany({
           include: { product: true, warehouse: true },
           take: 250,
@@ -122,7 +122,6 @@ export class NotificationService {
         const authorizations = await prisma.authorizationRequest.findMany({
           where: {
             status: 'PENDING',
-            ...(role === 'VENDEDORA' ? { requestedBy: userContext.userId } : {}),
           },
           orderBy: { createdAt: 'asc' },
           take: 100,
@@ -140,7 +139,7 @@ export class NotificationService {
         }
       }
 
-      if (['COBRADOR', 'SUPERVISORA', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      if (['COBRADOR', 'SUPERVISORA', 'ADMIN'].includes(role)) {
         const conflicts = await prisma.syncConflict.findMany({
           where: {
             resolvedAt: null,
@@ -182,7 +181,19 @@ export class NotificationService {
     if (dto.entity && dto.entityId) {
       const existing = await this.findDuplicate(dto.userId, dto.type, dto.entity, dto.entityId);
       if (existing) {
-        return existing;
+        const refreshed = { ...existing, priority, title: dto.title, message: dto.message, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : existing.expiresAt };
+        try {
+          const prisma = PrismaService.getInstance();
+          const updated = await prisma.notification.update({
+            where: { id: existing.id },
+            data: { priority, title: dto.title, message: dto.message, expiresAt: refreshed.expiresAt },
+          });
+          NotificationsStore.notifications.set(updated.id, updated);
+          return updated;
+        } catch {
+          NotificationsStore.notifications.set(existing.id, refreshed);
+          return refreshed;
+        }
       }
     }
 
@@ -222,6 +233,7 @@ export class NotificationService {
       NotificationsStore.notifications.set(notification.id, notification);
     }
 
+    const stored = NotificationsStore.notifications.get(notification.id) || notification;
     await AuditLogService.record({
       userId: dto.userId,
       action: 'NOTIFICATION_CREATED',
@@ -230,7 +242,7 @@ export class NotificationService {
       payload: { type: dto.type, priority, title: dto.title },
     });
 
-    return notification;
+    return stored;
   }
 
   private static async findDuplicate(userId: string, type: string, entity: string, entityId: string): Promise<any | null> {
@@ -251,29 +263,32 @@ export class NotificationService {
   }
 
   static async getUserNotifications(userId: string, filterStatus?: string, userContext?: any): Promise<any[]> {
+    const role = String(userContext?.role || '').toUpperCase();
+    if (role === 'VENDEDORA' || role === 'VENDEDOR') return [];
     let list: any[] = [];
     try {
       const prisma = PrismaService.getInstance();
-      const whereClause: any = { userId };
+      const now = new Date();
+      const whereClause: any = {
+        userId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      };
       if (filterStatus) whereClause.status = filterStatus;
 
       list = await prisma.notification.findMany({
         where: whereClause,
-        orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
+        orderBy: { createdAt: 'desc' },
       });
-      if (list.length > 0) return list;
     } catch {}
 
-    list = Array.from(NotificationsStore.notifications.values()).filter((n) => n.userId === userId);
+    if (!list.length) list = Array.from(NotificationsStore.notifications.values()).filter((n) => n.userId === userId && (!n.expiresAt || new Date(n.expiresAt) > new Date()));
     if (filterStatus) {
       list = list.filter((n) => n.status === filterStatus);
     }
 
-    if (userContext) {
-      list = list.filter((n) => NotificationAbacService.canAccessNotification(userContext, n));
-    }
-
-    return list;
+    if (userContext) list = list.filter((n) => NotificationAbacService.canAccessNotification(userContext, n));
+    const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+    return list.sort((a, b) => (rank[String(a.priority).toUpperCase()] ?? 5) - (rank[String(b.priority).toUpperCase()] ?? 5) || +new Date(b.createdAt) - +new Date(a.createdAt));
   }
 
   static async markAsRead(id: string, userId: string): Promise<any> {
@@ -282,10 +297,8 @@ export class NotificationService {
       const prisma = PrismaService.getInstance();
       const dbNotif = await prisma.notification.findFirst({ where: { id, userId } });
       if (dbNotif) {
-        notification = await prisma.notification.update({
-          where: { id },
-          data: { status: 'READ', readAt: new Date() },
-        });
+        notification = dbNotif;
+        await prisma.notification.delete({ where: { id } });
       }
     } catch {}
 
@@ -295,12 +308,12 @@ export class NotificationService {
       if (notification) {
         notification.status = 'READ';
         notification.readAt = new Date();
+        NotificationsStore.notifications.delete(id);
       }
     }
 
     if (!notification) throw new Error('Notificación no encontrada');
-
-    NotificationsStore.notifications.set(id, notification);
+    NotificationsStore.notifications.delete(id);
 
     await AuditLogService.record({
       userId,
@@ -315,20 +328,20 @@ export class NotificationService {
 
   static async markAllAsRead(userId: string): Promise<number> {
     let count = 0;
+    let databaseCompleted = false;
     try {
       const prisma = PrismaService.getInstance();
-      const result = await prisma.notification.updateMany({
+      const result = await prisma.notification.deleteMany({
         where: { userId, status: 'UNREAD' },
-        data: { status: 'READ', readAt: new Date() },
       });
       count = result.count;
+      databaseCompleted = true;
     } catch {}
 
     for (const n of Array.from(NotificationsStore.notifications.values())) {
       if (n.userId === userId && n.status === 'UNREAD') {
-        n.status = 'READ';
-        n.readAt = new Date();
-        count++;
+        NotificationsStore.notifications.delete(n.id);
+        if (!databaseCompleted) count++;
       }
     }
 

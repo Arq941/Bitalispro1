@@ -97,3 +97,16 @@ self.addEventListener('fetch',event=>{
   }
   event.respondWith(staleWhileRevalidate(request));
 });
+
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  const rawHref=String(event.notification.data?.href||'/notifications');
+  const href=rawHref.startsWith('/')&&!rawHref.startsWith('//')?rawHref:'/notifications';
+  event.waitUntil((async()=>{
+    const target=new URL(href,self.location.origin).href;
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const current=windows.find(client=>new URL(client.url).origin===self.location.origin);
+    if(current){await current.focus();if('navigate'in current)await current.navigate(target);return;}
+    await self.clients.openWindow(target);
+  })());
+});
