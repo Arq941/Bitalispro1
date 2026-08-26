@@ -102,8 +102,9 @@ export class AuthService {
     message?: string;
     code?: string;
   }> {
-    let user = this.getUserByEmail(params.email);
-    if (!user) user = await this.hydrateUserFromDatabase(params.email);
+    // El estado, rol y permissionVersion se consultan en cada acceso. El mapa
+    // local sólo se conserva para pruebas y nunca decide un login real.
+    const user = await this.hydrateUserFromDatabase(params.email);
 
     const GENERIC_INVALID_MSG = 'Credenciales inválidas o cuenta inaccesible.';
 
@@ -176,7 +177,7 @@ export class AuthService {
     });
 
     const refreshToken = SecurityService.generateRefreshToken();
-    const session = RefreshTokenService.createSession({
+    const session = await RefreshTokenService.createSession({
       userId: user.id,
       refreshToken,
       ipAddress: params.ipAddress,
@@ -217,38 +218,42 @@ export class AuthService {
     };
   }
 
-  public static refresh(params: {
+  public static async refresh(params: {
     refreshToken: string;
     ipAddress?: string;
     userAgent?: string;
-  }): {
+  }): Promise<{
     success: boolean;
     accessToken?: string;
     refreshToken?: string;
     message?: string;
-  } {
-    const res = RefreshTokenService.validateAndRotate(params);
+  }> {
+    const res = await RefreshTokenService.validateAndRotate(params);
     if (!res.valid || !res.session || !res.newRefreshToken) return { success: false, message: 'Refresh token inválido o expirado.' };
-    const user = this.getUserById(res.session.userId);
-    if (!user || user.accountStatus !== 'ACTIVE') return { success: false, message: 'Usuario no activo.' };
+    const dbUser=await prisma.user.findUnique({where:{id:res.session.userId},include:{userRoles:{include:{role:true}}}});
+    const role=dbUser?.userRoles[0]?.role?.name as UserAccountState['role']|undefined;
+    if (!dbUser || dbUser.accountStatus !== 'ACTIVE' || !role) {
+      await RefreshTokenService.revokeAllUserSessions(res.session.userId);
+      return { success: false, message: 'Usuario no activo.' };
+    }
     return {
       success: true,
       accessToken: SecurityService.generateAccessToken({
-        sub: user.id,
+        sub: dbUser.id,
         sessionId: res.session.id,
-        permissionVersion: user.permissionVersion,
-        email: user.email,
-        role: user.role,
+        permissionVersion: dbUser.permissionVersion,
+        email: dbUser.email,
+        role,
       }),
       refreshToken: res.newRefreshToken,
     };
   }
 
-  public static logout(sessionId: string, userId: string): boolean {
+  public static logout(sessionId: string, userId: string) {
     return RefreshTokenService.revokeSession(sessionId);
   }
 
-  public static logoutAll(userId: string): number {
+  public static logoutAll(userId: string) {
     return RefreshTokenService.revokeAllUserSessions(userId);
   }
 
@@ -274,7 +279,7 @@ export class AuthService {
         permissionVersion: user.permissionVersion,
       }
     });
-    RefreshTokenService.revokeAllUserSessions(user.id);
+    await RefreshTokenService.revokeAllUserSessions(user.id);
     return { success: true, message: 'Contraseña actualizada correctamente. Inicie sesión de nuevo.' };
   }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 import { ProductMediaStorageService } from '@/src/products/product-media-storage.service';
 
@@ -18,7 +18,7 @@ function statusFromError(error: unknown) {
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let storedKey: string | null = null;
   try {
-    const ctx = getSalesUserContext(req);
+    const ctx = await extractUserContext(req);
     await PermissionService.requirePermission(ctx.userId, 'inventory.manage');
     const { id } = await params;
     const product = await prisma.product.findUnique({ where: { id }, select: { id: true, sku: true } });

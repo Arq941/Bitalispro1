@@ -216,6 +216,7 @@ export class PermissionService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
+        accountStatus: true,
         userRoles: {
           include: {
             role: {
@@ -227,7 +228,7 @@ export class PermissionService {
         },
       },
     });
-    if (!user) return { inherited: new Set<string>(), configured: false, roleNames: [] as string[] };
+    if (!user || user.accountStatus !== 'ACTIVE') return { inherited: new Set<string>(), configured: false, roleNames: [] as string[] };
 
     const inherited = new Set<string>();
     const roleNames: string[] = [];

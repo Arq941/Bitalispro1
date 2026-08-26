@@ -1,6 +1,6 @@
 'use client';
 
-export type QueueState='QUEUED'|'SYNCING'|'SYNCED'|'FAILED';
+export type QueueState='QUEUED'|'SYNCING'|'SYNCED'|'CONFLICT'|'FAILED';
 export type OfflineOperation={id:string;endpoint:string;method:string;body:any;idempotencyKey:string;createdAt:string;state:QueueState;kind:string;attempts:number;ownerId?:string;lastError?:string};
 const DB='bitalis-phase15'; const STORE='offline-operations';
 function currentOwner(){try{return String(JSON.parse(localStorage.getItem('bitalis_auth_user')||'{}')?.id||'');}catch{return'';}}

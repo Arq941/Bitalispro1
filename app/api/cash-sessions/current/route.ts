@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 
 export async function GET(req: NextRequest) {
   try {
-    const userContext = getSalesUserContext(req);
+    const userContext = await extractUserContext(req);
     await PermissionService.requirePermission(userContext.userId, 'cash.view');
 
     const { searchParams } = new URL(req.url);

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1';
     const userAgent = req.headers.get('user-agent') || 'Unknown';
 
-    const result = AuthService.refresh({ refreshToken, ipAddress, userAgent });
+    const result = await AuthService.refresh({ refreshToken, ipAddress, userAgent });
 
     if (!result.success) {
       return NextResponse.json(result, { status: 401 });

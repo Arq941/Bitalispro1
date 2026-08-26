@@ -3,20 +3,20 @@ import { SalesService } from '@/src/sales/sales.service';
 import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
 import { InventoryService } from '@/src/inventory/inventory.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 
 const prisma=PrismaService.getInstance();
 function codeFromError(error:any){const m=String(error?.message||'');if(m.includes('UNAUTHORIZED'))return 401;if(m.includes('FORBIDDEN'))return 403;return 400;}
 
 export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}){
- try{const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');const{id}=await params;const sale=await SalesService.getSaleById(id);if(!sale)return NextResponse.json({error:'Venta no encontrada'},{status:404});return NextResponse.json(sale,{status:200});}
+ try{const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');const{id}=await params;const sale=await SalesService.getSaleById(id);if(!sale)return NextResponse.json({error:'Venta no encontrada'},{status:404});return NextResponse.json(sale,{status:200});}
  catch(err:any){return NextResponse.json({error:err.message||'Error al obtener la venta'},{status:codeFromError(err)});}
 }
 
 export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
-  const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');
+  const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'sales.view');
   if(!['ADMIN','SUPERVISORA'].includes(ctx.role))return NextResponse.json({error:'FORBIDDEN: Solo ADMIN o SUPERVISORA puede reasignar una venta.'},{status:403});
   const{id}=await params,body=await req.json(),clientId=String(body?.clientId||'').trim();
   if(!clientId)return NextResponse.json({error:'Selecciona el cliente correcto.'},{status:400});
@@ -32,7 +32,7 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
 
 export async function DELETE(req:NextRequest,{params}:{params:Promise<{id:string}>}){
  try{
-  const ctx=getSalesUserContext(req);if(ctx.role!=='ADMIN')return NextResponse.json({error:'FORBIDDEN: Solo ADMIN puede eliminar ventas.'},{status:403});const{id}=await params;
+  const ctx=await extractUserContext(req);if(ctx.role!=='ADMIN')return NextResponse.json({error:'FORBIDDEN: Solo ADMIN puede eliminar ventas.'},{status:403});const{id}=await params;
   const sale=await prisma.sale.findUnique({where:{id},include:{downPayment:true,companyContribution:true,credits:true,items:true}});if(!sale)return NextResponse.json({error:'Venta no encontrada.'},{status:404});
   const[paymentCount,settlementCount,promiseCount,visitCount]=await Promise.all([
     prisma.payment.count({where:{credit:{saleId:id}}}),

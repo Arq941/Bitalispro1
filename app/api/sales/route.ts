@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SalesService } from '@/src/sales/sales.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 
 function statusFromError(err: any, fallback: number) {
@@ -12,7 +12,7 @@ function statusFromError(err: any, fallback: number) {
 
 export async function POST(req: NextRequest) {
   try {
-    const userContext = getSalesUserContext(req);
+    const userContext = await extractUserContext(req);
     await PermissionService.requirePermission(userContext.userId, 'sales.create');
     const body = await req.json();
     const headerKey = req.headers.get('idempotency-key')?.trim();
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const userContext = getSalesUserContext(req);
+    const userContext = await extractUserContext(req);
     await PermissionService.requirePermission(userContext.userId, 'sales.view');
     const sales = await SalesService.getSalesList();
     return NextResponse.json({ sales }, { status: 200 });

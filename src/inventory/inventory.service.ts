@@ -417,24 +417,33 @@ export class InventoryService {
       // Update Stock
       try {
         const prisma = PrismaService.getInstance();
-        await prisma.inventoryStock.update({
-          where: { warehouseId_productId: { warehouseId: dto.warehouseId, productId: dto.productId } },
-          data: {
-            quantityReserved: newReserved,
-            quantityAvailable: newAvailable,
-          },
-        });
-        await prisma.inventoryReservation.create({
-          data: {
-            id: reservation.id,
-            warehouseId: dto.warehouseId,
-            productId: dto.productId,
-            saleId: dto.saleId,
-            quantity: dto.quantity,
-            status: 'ACTIVE',
-            expiresAt: reservation.expiresAt,
-            createdBy: dto.userId,
-          },
+        await prisma.$transaction(async (tx) => {
+          const updated = await tx.inventoryStock.updateMany({
+            where: {
+              warehouseId: dto.warehouseId,
+              productId: dto.productId,
+              quantityAvailable: { gte: dto.quantity },
+            },
+            data: {
+              quantityReserved: { increment: dto.quantity },
+              quantityAvailable: { decrement: dto.quantity },
+            },
+          });
+          if (updated.count !== 1) {
+            throw new Error('La existencia cambió durante la venta. Actualiza e intenta nuevamente.');
+          }
+          await tx.inventoryReservation.create({
+            data: {
+              id: reservation.id,
+              warehouseId: dto.warehouseId,
+              productId: dto.productId,
+              saleId: dto.saleId,
+              quantity: dto.quantity,
+              status: 'ACTIVE',
+              expiresAt: reservation.expiresAt,
+              createdBy: dto.userId,
+            },
+          });
         });
       } catch (error) { this.failClosedInProduction(error);
         const key = this.getStockKey(dto.warehouseId, dto.productId);
@@ -632,13 +641,29 @@ export class InventoryService {
 
         try {
           const prisma = PrismaService.getInstance();
-          await prisma.inventoryReservation.update({
-            where: { id: data.reservationId },
-            data: { status: 'CONVERTED_TO_DELIVERY', convertedAt: new Date() },
-          });
-          await prisma.inventoryStock.update({
-            where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: data.productId } },
-            data: { quantityOnHand: newOnHand, quantityReserved: newReserved, quantityAvailable: newAvailable },
+          await prisma.$transaction(async (tx) => {
+            const converted = await tx.inventoryReservation.updateMany({
+              where: { id: data.reservationId, status: 'ACTIVE' },
+              data: { status: 'CONVERTED_TO_DELIVERY', convertedAt: new Date() },
+            });
+            if (converted.count !== 1) {
+              throw new Error('La reserva ya fue procesada por otra solicitud.');
+            }
+            const updated = await tx.inventoryStock.updateMany({
+              where: {
+                warehouseId: data.warehouseId,
+                productId: data.productId,
+                quantityOnHand: { gte: data.quantity },
+                quantityReserved: { gte: data.quantity },
+              },
+              data: {
+                quantityOnHand: { decrement: data.quantity },
+                quantityReserved: { decrement: data.quantity },
+              },
+            });
+            if (updated.count !== 1) {
+              throw new Error('La existencia reservada ya no está disponible.');
+            }
           });
         } catch (error) { this.failClosedInProduction(error);
           reservation.status = 'CONVERTED_TO_DELIVERY';
@@ -680,10 +705,19 @@ export class InventoryService {
 
     try {
       const prisma = PrismaService.getInstance();
-      await prisma.inventoryStock.update({
-        where: { warehouseId_productId: { warehouseId: data.warehouseId, productId: data.productId } },
-        data: { quantityOnHand: newOnHand, quantityAvailable: newAvailable },
+      const updated = await prisma.inventoryStock.updateMany({
+        where: {
+          warehouseId: data.warehouseId,
+          productId: data.productId,
+          quantityAvailable: { gte: data.quantity },
+          quantityOnHand: { gte: data.quantity },
+        },
+        data: {
+          quantityOnHand: { decrement: data.quantity },
+          quantityAvailable: { decrement: data.quantity },
+        },
       });
+      if (updated.count !== 1) throw new Error('La existencia cambió durante la entrega. Actualiza e intenta nuevamente.');
     } catch (error) { this.failClosedInProduction(error);
       const key = this.getStockKey(data.warehouseId, data.productId);
       const st = InventoryStore.stocks.get(key);

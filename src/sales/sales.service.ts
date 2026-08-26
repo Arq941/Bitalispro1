@@ -97,6 +97,53 @@ export class SalesService {
     SalesStore.clear();
   }
 
+  private static async resolveWarehouseForSale(
+    requestedWarehouseId: string | undefined,
+    items: Array<{ productId: string; quantity: number }>,
+  ): Promise<string> {
+    const prisma = PrismaService.getInstance();
+    const stocks = await prisma.inventoryStock.findMany({
+      where: {
+        productId: { in: Array.from(new Set(items.map((item) => item.productId))) },
+        ...(requestedWarehouseId ? { warehouseId: requestedWarehouseId } : {}),
+        warehouse: { isActive: true },
+      },
+      include: { warehouse: true },
+    });
+    const required = new Map<string, number>();
+    for (const item of items) {
+      required.set(item.productId, (required.get(item.productId) || 0) + item.quantity);
+    }
+    const byWarehouse = new Map<string, typeof stocks>();
+    for (const stock of stocks) {
+      const list = byWarehouse.get(stock.warehouseId) || [];
+      list.push(stock);
+      byWarehouse.set(stock.warehouseId, list);
+    }
+    const candidates = Array.from(byWarehouse.entries()).sort(([, left], [, right]) => {
+      const leftCentral = left[0]?.warehouse?.type === "CENTRAL" ? 1 : 0;
+      const rightCentral = right[0]?.warehouse?.type === "CENTRAL" ? 1 : 0;
+      return rightCentral - leftCentral;
+    });
+    for (const [warehouseId, warehouseStocks] of candidates) {
+      const available = new Map(
+        warehouseStocks.map((stock) => [
+          stock.productId,
+          Number(stock.quantityOnHand) - Number(stock.quantityReserved),
+        ]),
+      );
+      if (
+        Array.from(required.entries()).every(
+          ([productId, quantity]) => (available.get(productId) || 0) >= quantity,
+        )
+      ) {
+        return warehouseId;
+      }
+    }
+    const scope = requestedWarehouseId ? "en el almacén seleccionado" : "en un mismo almacén";
+    throw new Error(`No hay inventario disponible suficiente ${scope} para completar la venta.`);
+  }
+
   private static async commitSaleInventory(params: {
     saleId: string;
     items: Array<{ productId: string; quantity: number }>;
@@ -165,19 +212,18 @@ export class SalesService {
     const prefix = `VTA-${year}-`;
     try {
       const prisma = PrismaService.getInstance();
-      const last = await prisma.sale.findFirst({
-        where: { saleNumber: { startsWith: prefix } },
-        orderBy: { saleNumber: "desc" },
-        select: { saleNumber: true },
-      });
-      let seq = 1;
-      if (last?.saleNumber) {
-        const parts = last.saleNumber.split("-");
-        if (parts.length === 3) {
-          const num = parseInt(parts[2], 10);
-          if (!isNaN(num)) seq = num + 1;
+      const mysql=String(process.env.DATABASE_URL||'').startsWith('mysql:');
+      const seq=await prisma.$transaction(async tx=>{
+        if(mysql){
+          await tx.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS sale_number_sequences (sale_year INT PRIMARY KEY, next_value INT NOT NULL) ENGINE=InnoDB');
+          await tx.$executeRawUnsafe('INSERT INTO sale_number_sequences (sale_year,next_value) VALUES (?,LAST_INSERT_ID(1)) ON DUPLICATE KEY UPDATE next_value=LAST_INSERT_ID(next_value+1)',year);
+          const rows=await tx.$queryRawUnsafe<Array<{value:bigint|number}>>('SELECT LAST_INSERT_ID() AS value');
+          return Number(rows[0]?.value||1);
         }
-      }
+        await tx.$executeRawUnsafe('CREATE TABLE IF NOT EXISTS sale_number_sequences (sale_year INT PRIMARY KEY, next_value INT NOT NULL)');
+        const rows=await tx.$queryRawUnsafe<Array<{next_value:number}>>('INSERT INTO sale_number_sequences (sale_year,next_value) VALUES ($1,1) ON CONFLICT (sale_year) DO UPDATE SET next_value=sale_number_sequences.next_value+1 RETURNING next_value',year);
+        return Number(rows[0]?.next_value||1);
+      });
       return `${prefix}${seq.toString().padStart(4, "0")}`;
     } catch (error) {
       this.failClosedInProduction(error);
@@ -196,13 +242,20 @@ export class SalesService {
           include: { items: true, client: true },
         });
         if (persisted) {
+          const warehouseId = await this.resolveWarehouseForSale(
+            dto.warehouseId,
+            persisted.items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+            })),
+          );
           await this.commitSaleInventory({
             saleId: persisted.id,
             items: persisted.items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
             })),
-            warehouseId: dto.warehouseId || "wh_central",
+            warehouseId,
             userId: userContext.userId,
             idempotencyKey: dto.idempotencyKey,
           });
@@ -224,9 +277,21 @@ export class SalesService {
     if (dto.items.length === 0)
       throw new Error("La venta debe incluir al menos 1 producto.");
     const saleType = dto.saleType || "CREDIT";
-    const warehouseId = dto.warehouseId || "wh_central";
     const saleNumber = await this.generateSaleNumber();
     const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const prisma=PrismaService.getInstance();
+    const productIds=Array.from(new Set(dto.items.map(item=>String(item.productId||'').trim()).filter(Boolean)));
+    if(productIds.length!==dto.items.length)throw new Error('Cada producto debe existir una sola vez dentro de la venta.');
+    const products=await prisma.product.findMany({where:{id:{in:productIds},status:'ACTIVE'},include:{prices:{where:{isActive:true}}}});
+    if(products.length!==productIds.length)throw new Error('Uno o más productos no existen o están inactivos.');
+    const productById=new Map(products.map(product=>[product.id,product]));
+    const now=new Date();
+    const currentPrice=(productId:string,types:string[])=>{
+      const product=productById.get(productId);
+      const price=types.map(type=>product?.prices.find(value=>String(value.priceType)===type&&(!value.validFrom||value.validFrom<=now)&&(!value.validUntil||value.validUntil>=now))).find(Boolean);
+      if(!price||new Decimal(price.amount.toString()).lessThanOrEqualTo(0))throw new Error(`El producto ${product?.name||productId} no tiene un precio vigente configurado.`);
+      return new Decimal(price.amount.toString());
+    };
     let totalListPrice = new Decimal(0),
       subtotal = new Decimal(0),
       requiresAuthorization = false;
@@ -246,12 +311,14 @@ export class SalesService {
       authReasons.push("TWO_PRODUCT_SALE");
     }
     const itemsData = dto.items.map((it, idx) => {
-      const qty = it.quantity || 1;
-      const unitPrice = new Decimal(it.unitPrice || it.negotiatedPrice || 1490);
+      const qty = Number(it.quantity || 1);
+      if(!Number.isInteger(qty)||qty<=0)throw new Error('La cantidad de cada producto debe ser un entero mayor a cero.');
+      const unitPrice = currentPrice(it.productId,saleType==='CASH'?['CASH','LIST_PRICE','LIST']:['CREDIT','LIST_PRICE','LIST']);
       const negotiatedPrice = new Decimal(it.negotiatedPrice || unitPrice);
-      const minimumAuthorizedPrice = new Decimal(
-        it.minimumAuthorizedPrice || unitPrice,
-      );
+      if(!negotiatedPrice.isFinite()||negotiatedPrice.lessThanOrEqualTo(0))throw new Error('El precio propuesto debe ser mayor a cero.');
+      let minimumAuthorizedPrice:Decimal;
+      try{minimumAuthorizedPrice=currentPrice(it.productId,['MINIMUM_AUTHORIZED']);}
+      catch{minimumAuthorizedPrice=unitPrice;}
       const itemSubtotal = negotiatedPrice.mul(qty),
         itemTotalListPrice = unitPrice.mul(qty);
       totalListPrice = totalListPrice.plus(itemTotalListPrice);
@@ -274,6 +341,10 @@ export class SalesService {
         total: itemSubtotal,
       };
     });
+    const warehouseId = await this.resolveWarehouseForSale(
+      dto.warehouseId,
+      itemsData.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    );
     const engancheCliente = new Decimal(dto.engancheCliente || 0);
     const aporteEmpresa =
       FinancialRulesService.calcularAporteEmpresa(engancheCliente);

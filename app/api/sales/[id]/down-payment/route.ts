@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SalesService } from '@/src/sales/sales.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 
 export async function POST(
   req: NextRequest,
@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const userContext = getSalesUserContext(req);
+    const userContext = await extractUserContext(req);
     const body = await req.json();
 
     const result = await SalesService.registerDownPayment(

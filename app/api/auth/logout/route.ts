@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Token inválido o expirado' }, { status: 401 });
     }
 
-    const success = AuthService.logout(decoded.sessionId, decoded.sub);
+    const success = await AuthService.logout(decoded.sessionId, decoded.sub);
     const response=NextResponse.json({ success, message: 'Sesión cerrada correctamente.' });
     response.cookies.set('bitalis_refresh_token','',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api/auth',maxAge:0});
     return response;

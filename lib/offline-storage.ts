@@ -117,13 +117,17 @@ export class OfflineStorageService {
     const db=await this.db();if(!db)return;const tx=db.transaction([STORE,'cached_clients','cached_routes','cached_credits','sync_metadata'],'readwrite');
     const ops=await requestResult<OfflineOperation[]>(tx.objectStore(STORE).index('userId').getAll(userId));
     for(const op of ops)tx.objectStore(STORE).delete(op.id);
-    for(const name of ['cached_clients','cached_routes','cached_credits','sync_metadata'])tx.objectStore(name).clear();
+    for(const name of ['cached_clients','cached_routes','cached_credits','sync_metadata']){
+      const store=tx.objectStore(name),rows=await requestResult<any[]>(store.getAll());
+      for(const row of rows)if(row?.__ownerUserId===userId)store.delete(row.id);
+    }
     await txDone(tx);
   }
   async saveCachedData(storeName:'cached_clients'|'cached_routes'|'cached_credits',items:any[],userId?:string){
     if(!userId)throw new Error('No se puede guardar caché offline sin usuario');
     const db=await this.db();if(!db)throw new Error('IndexedDB no disponible');const tx=db.transaction(storeName,'readwrite');const store=tx.objectStore(storeName);
-    store.clear();for(const item of items)store.put({...item,id:String(item.id),__ownerUserId:userId});await txDone(tx);
+    const previous=await requestResult<any[]>(store.getAll());for(const row of previous)if(row?.__ownerUserId===userId)store.delete(row.id);
+    for(const item of items)store.put({...item,id:String(item.id),__ownerUserId:userId});await txDone(tx);
   }
   async getCachedData(storeName:'cached_clients'|'cached_routes'|'cached_credits',userId?:string){
     if(!userId)return[];const db=await this.db();if(!db)return[];const all=await requestResult<any[]>(db.transaction(storeName).objectStore(storeName).getAll());

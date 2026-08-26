@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaService } from '@/src/database/prisma.service';
 import { AuditLogService } from '@/src/audit/audit-log.service';
-import { getSalesUserContext } from '@/src/sales/sales-auth.helper';
+import { extractUserContext } from '@/src/sales/sales-auth.helper';
 import { PermissionService } from '@/src/server/auth/permission.service';
 import { inlineAndroidProductImages, isBitalisAndroidRequest } from '@/lib/products/android-product-images';
 
@@ -11,7 +11,7 @@ function statusFromError(error:unknown,fallback:number){const message=String((er
 
 export async function GET(req:NextRequest){
  try{
-  const ctx=getSalesUserContext(req);
+  const ctx=await extractUserContext(req);
   await PermissionService.requirePermission(ctx.userId,'inventory.view');
   const products=await prisma.product.findMany({include:{category:true,images:true,prices:true,stocks:true},orderBy:{name:'asc'}});
   const responseProducts=isBitalisAndroidRequest(req)?inlineAndroidProductImages(products):products;
@@ -22,7 +22,7 @@ export async function GET(req:NextRequest){
 
 export async function POST(req:NextRequest){
  try{
-  const ctx=getSalesUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const body=await req.json();
+  const ctx=await extractUserContext(req);await PermissionService.requirePermission(ctx.userId,'inventory.manage');const body=await req.json();
   const sku=String(body?.sku||'').trim(),name=String(body?.name||'').trim();if(!sku||!name)throw new Error('SKU y nombre son obligatorios.');
   const costPrice=Number(body?.costPrice||0);if(!Number.isFinite(costPrice)||costPrice<0)throw new Error('Costo inválido.');
   const minStock=Number(body?.minStock||0),reorderPoint=Number(body?.reorderPoint||0),maxStock=Number(body?.maxStock??100);if([minStock,reorderPoint,maxStock].some(v=>!Number.isInteger(v)||v<0))throw new Error('Mínimo, reorden y máximo deben ser enteros no negativos.');if(maxStock<minStock)throw new Error('El stock máximo no puede ser menor al mínimo.');
