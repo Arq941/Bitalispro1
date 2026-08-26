@@ -522,6 +522,7 @@ model Product {
   prices                 ProductPrice[]
   priceHistories         ProductPriceHistory[]
   stocks                 InventoryStock[]
+  lots                   InventoryLot[]
   reservations           InventoryReservation[]
   kardexMovements        KardexMovement[]
   saleItems              SaleItem[]
@@ -598,6 +599,7 @@ model Warehouse {
   updatedAt DateTime      @updatedAt
 
   stocks          InventoryStock[]
+  lots            InventoryLot[]
   reservations    InventoryReservation[]
   kardexMovements KardexMovement[]
   orders          ProductOrder[]
@@ -619,6 +621,31 @@ model InventoryStock {
 
   @@unique([warehouseId, productId])
   @@map("inventory_stock")
+}
+
+model InventoryLot {
+  id                String    @id @default(uuid())
+  warehouseId       String
+  productId         String
+  lotNumber         String
+  expirationDate    DateTime?
+  receivedAt        DateTime  @default(now())
+  quantityReceived  Int
+  quantityAvailable Int
+  unitCost          Decimal?  @db.Decimal(12, 2)
+  supplierName      String?
+  status            String    @default("ACTIVE")
+  createdBy         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, productId, lotNumber])
+  @@index([warehouseId, productId, expirationDate])
+  @@index([expirationDate, status])
+  @@map("inventory_lots")
 }
 
 model InventoryReservation {
@@ -1448,5 +1475,3 @@ model SyncConflict {
   @@index([resolvedAt])
   @@map("sync_conflicts")
 }
-
-
