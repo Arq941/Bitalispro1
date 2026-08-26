@@ -11,6 +11,7 @@ import {haptic,installGlobalHaptics} from '@/lib/ux/haptics';
 import {prepareOfflineData} from '@/lib/phase15/offlineWarmup';
 import {clearApiCacheForUser} from '@/lib/phase15/apiCache';
 import {offlineStorage} from '@/lib/offline-storage';
+import {showNewNativeNotifications} from '@/lib/notifications-client';
 
 type User={id:string;role:string;firstName?:string;lastName?:string;email?:string};
 type NavItem={href:string;label:string;icon:any;permission:string};
@@ -62,7 +63,7 @@ function NestedShell({children,title}:{children:ReactNode;title?:string}){
 function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitle?:string}){
  const router=useRouter(),pathname=usePathname();
  const publicPath=isPublicPath(pathname);
- const shellRef=useRef<HTMLDivElement|null>(null),swipeStart=useRef<SwipeStart>(null),swipeConsumedUntil=useRef(0),lastNavIndex=useRef(0),notificationSnapshot=useRef<{ready:boolean;count:number}>({ready:false,count:0});
+ const shellRef=useRef<HTMLDivElement|null>(null),swipeStart=useRef<SwipeStart>(null),swipeConsumedUntil=useRef(0),lastNavIndex=useRef(0),notificationSnapshot=useRef<{ready:boolean;ids:Set<string>}>({ready:false,ids:new Set()});
  const[user,setUser]=useState<User|null>(null),[accountOpen,setAccountOpen]=useState(false),[loggingOut,setLoggingOut]=useState(false),[permissions,setPermissions]=useState<Set<string>|null>(null),[hydrated,setHydrated]=useState(false),[shellTitle,setShellTitle]=useState(initialTitle||titleForPath(pathname)),[unreadCount,setUnreadCount]=useState(0),[online,setOnline]=useState(true);
 
  useEffect(()=>installGlobalHaptics(),[]);
@@ -147,17 +148,20 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
     const json:any=await apiClient('/api/notifications/unread',{timeoutMs:8000});
     const raw=Array.isArray(json?.data)?json.data.length:Array.isArray(json?.notifications)?json.notifications.length:Number(json?.count??json?.unread??0);
     const count=Number.isFinite(raw)?Math.max(0,Number(raw)):0;
+    const data=Array.isArray(json?.data)?json.data:Array.isArray(json?.notifications)?json.notifications:[];
     const previous=notificationSnapshot.current;
-    if(previous.ready&&count>previous.count){
-      const newest=Array.isArray(json?.data)?json.data[0]:Array.isArray(json?.notifications)?json.notifications[0]:null;
+    const fresh=data.filter((item:any)=>item?.id&&!previous.ids.has(String(item.id)));
+    if(previous.ready&&fresh.length){
+      const newest=fresh[0];
       const priority=String(newest?.priority||newest?.severity||newest?.level||'').toUpperCase();
       const high=['HIGH','CRITICAL','URGENT','ALTA'].includes(priority);
       const title=String(newest?.title||newest?.subject||(high?'Alerta prioritaria de BITALIS':'Nueva notificación de BITALIS'));
       const body=String(newest?.message||newest?.body||'Tienes una nueva notificación pendiente.');
       try{(window as any).BitalisNotifications?.notify(title,body,high);}catch{}
       if(navigator.vibrate)navigator.vibrate(high?[350,160,350,160,600]:[180,120,180]);
+      void showNewNativeNotifications(fresh);
     }
-    notificationSnapshot.current={ready:true,count};
+    notificationSnapshot.current={ready:true,ids:new Set(data.map((item:any)=>String(item.id)).filter(Boolean))};
     if(alive)setUnreadCount(count);
    }catch{}
   };
@@ -165,10 +169,12 @@ function PersistentShell({children,initialTitle}:{children:ReactNode;initialTitl
   const onFocus=()=>{void refreshUnread();};
   const onChanged=()=>{void refreshUnread();};
   const onVisibility=()=>{if(document.visibilityState==='visible')void refreshUnread();};
+  const timer=window.setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refreshUnread();},60000);
   window.addEventListener('focus',onFocus);
+  window.addEventListener('online',onFocus);
   window.addEventListener('bitalis:notifications-changed',onChanged);
   document.addEventListener('visibilitychange',onVisibility);
-  return()=>{alive=false;window.removeEventListener('focus',onFocus);window.removeEventListener('bitalis:notifications-changed',onChanged);document.removeEventListener('visibilitychange',onVisibility);};
+  return()=>{alive=false;window.clearInterval(timer);window.removeEventListener('focus',onFocus);window.removeEventListener('online',onFocus);window.removeEventListener('bitalis:notifications-changed',onChanged);document.removeEventListener('visibilitychange',onVisibility);};
  },[privateReady,fieldSeller,user?.id]);
 
  const finishSwipe=useCallback((x:number,y:number)=>{
