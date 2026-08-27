@@ -11,6 +11,12 @@ export type ClientNotification = {
 const STORAGE_KEY = 'bitalis_notified_ids_v1';
 const MAX_IDS = 120;
 
+export type NativeNotificationState =
+  | 'checking'
+  | 'unsupported'
+  | 'insecure'
+  | NotificationPermission;
+
 export function notificationHref(item: ClientNotification) {
   const type = String(item.type || '').toUpperCase();
   if (['FIRST_COLLECTION_DUE', 'OVERDUE_CLIENT', 'COLLECTION_ROUTE_DUE', 'BROKEN_PROMISE', 'COLLECTION_RISK'].includes(type)) return '/route';
@@ -33,13 +39,16 @@ function remember(ids: Set<string>) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(ids).slice(-MAX_IDS))); } catch {}
 }
 
-export function nativeNotificationPermission() {
-  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported' as const;
+export function nativeNotificationPermission(): NativeNotificationState {
+  if (typeof window === 'undefined') return 'checking';
+  if (!window.isSecureContext) return 'insecure';
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return 'unsupported';
   return Notification.permission;
 }
 
 export async function requestNativeNotificationPermission() {
-  if (nativeNotificationPermission() === 'unsupported') return 'unsupported' as const;
+  const state = nativeNotificationPermission();
+  if (state === 'unsupported' || state === 'insecure' || state === 'checking') return state;
   return Notification.requestPermission();
 }
 
