@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const expense = await CashService.createExpense({
       cashSessionId: id,
       userId: context.userId,
-      collectorId: session.collectorId,
+      collectorId: session.collectorId||session.userId,
       amount: body.amount,
       expenseType: body.expenseType || body.type,
       category: body.category,
