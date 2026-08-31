@@ -48,6 +48,8 @@ const collectorCash = read('app/api/cash/collector/[collectorId]/route.ts');
 const supervisorCash = read('app/api/cash/supervisor/dashboard/route.ts');
 const notificationsPage = read('app/notifications/page.tsx');
 const notificationsClient = read('lib/notifications-client.ts');
+const supervisorConflicts = read('components/offline/SupervisorConflictsDashboard.tsx');
+const syncPage = read('app/sync/page.tsx');
 
 assert(!securityService.includes('bitalis_super_secret_jwt_key'),
   'JWT signing must never fall back to a repository secret');
@@ -86,6 +88,10 @@ assert(notificationsPage.includes("href:'/sync'") && notificationsClient.include
   'offline and conflict notifications must open the existing synchronization center');
 assert(!notificationsPage.includes('/offline/conflicts') && !notificationsClient.includes('/offline/conflicts'),
   'notifications must never navigate to the removed offline conflicts route');
+assert(supervisorConflicts.includes('apiClient(`/api/offline/conflicts') && !supervisorConflicts.includes("'SUPERVISORA-01'") && !supervisorConflicts.includes("'x-user-id'"),
+  'conflict supervision must use the authenticated API client and never a fabricated identity');
+assert(syncPage.includes("role==='ADMIN'||role==='SUPERVISORA'") && syncPage.includes('<SupervisorConflictsDashboard/>'),
+  'the synchronization center must expose server conflict resolution only to supervision roles');
 for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
   assert(nextConfig.includes(header),'global security headers must include '+header);
 }
