@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const movement = await CashService.addCashMovement({
       cashSessionId: id,
-      collectorId: session.collectorId,
+      collectorId: session.collectorId||session.userId,
       type: body.type,
       amount: body.amount,
       reference: body.reference,
