@@ -46,6 +46,8 @@ const cashSessionReconciliation = read('app/api/cash-sessions/[id]/reconciliatio
 const cashSessionWithdrawals = read('app/api/cash-sessions/[id]/withdrawals/route.ts');
 const collectorCash = read('app/api/cash/collector/[collectorId]/route.ts');
 const supervisorCash = read('app/api/cash/supervisor/dashboard/route.ts');
+const notificationsPage = read('app/notifications/page.tsx');
+const notificationsClient = read('lib/notifications-client.ts');
 
 assert(!securityService.includes('bitalis_super_secret_jwt_key'),
   'JWT signing must never fall back to a repository secret');
@@ -80,6 +82,10 @@ assert(collectorCash.includes('requireCollectorOrSupervisor(req,collectorId)'),
   'collector cash lookup must prevent access to another collector');
 assert(supervisorCash.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])"),
   'cash supervisor dashboard must require a supervision role');
+assert(notificationsPage.includes("href:'/sync'") && notificationsClient.includes("return '/sync'"),
+  'offline and conflict notifications must open the existing synchronization center');
+assert(!notificationsPage.includes('/offline/conflicts') && !notificationsClient.includes('/offline/conflicts'),
+  'notifications must never navigate to the removed offline conflicts route');
 for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
   assert(nextConfig.includes(header),'global security headers must include '+header);
 }
