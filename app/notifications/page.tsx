@@ -31,7 +31,7 @@ const actionFor=(item:Notification)=>{
   case'COLLECTIONS':return{href:'/route',label:'Abrir ruta',icon:MapPinned};
   case'INVENTORY':return{href:'/inventory',label:'Ver inventario',icon:Boxes};
   case'APPROVALS':return{href:'/authorizations',label:'Revisar',icon:Stamp};
-  case'SYNC':return{href:'/offline/conflicts',label:'Resolver',icon:RefreshCw};
+  case'SYNC':return{href:'/sync',label:'Resolver',icon:RefreshCw};
   default:return null;
  }
 };
