@@ -184,6 +184,8 @@ assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes(
   'offline queue must recover interrupted sync and reconcile each server result');
 assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
   'offline operations and cached records must remain scoped to their owner and device');
+assert(!offlineStorage.includes("localStorage.getItem('userId')"),
+  'durable offline storage must never recover ownership from a stale legacy userId key');
 assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
   'offline sync must use authenticated API access and never fallback to fabricated identities');
 assert(offlineClient.includes("localStorage.getItem('bitalis_auth_user')") && offlineClient.includes("if(!userId)return null"),
