@@ -22,7 +22,7 @@ export function notificationHref(item: ClientNotification) {
   if (['FIRST_COLLECTION_DUE', 'OVERDUE_CLIENT', 'COLLECTION_ROUTE_DUE', 'BROKEN_PROMISE', 'COLLECTION_RISK'].includes(type)) return '/route';
   if (type.includes('INVENTORY') || type.includes('PURCHASE_ORDER')) return '/inventory';
   if (type.includes('AUTHORIZATION')) return '/authorizations';
-  if (type.includes('OFFLINE') || type.includes('CONFLICT')) return '/offline/conflicts';
+  if (type.includes('OFFLINE') || type.includes('CONFLICT')) return '/sync';
   return '/notifications';
 }
 

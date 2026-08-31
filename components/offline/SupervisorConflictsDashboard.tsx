@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, XCircle, ShieldAlert, RefreshCw, Eye, Check, X, Info } from 'lucide-react';
+import {apiClient} from '@/lib/phase15/apiClient';
 
 export function SupervisorConflictsDashboard() {
   const [conflicts, setConflicts] = useState<any[]>([]);
@@ -10,17 +11,18 @@ export function SupervisorConflictsDashboard() {
   const [resolutionNotes, setResolutionNotes] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING');
+  const [error,setError]=useState('');
 
   const fetchConflicts = async () => {
     setLoading(true);
+    setError('');
     try {
-      const res = await fetch(`/api/offline/conflicts?status=${statusFilter}`);
-      const data = await res.json();
+      const data:any = await apiClient(`/api/offline/conflicts?status=${statusFilter}`);
       if (data.success) {
         setConflicts(data.conflicts || []);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err:any) {
+      setError(err?.message||'No pudimos cargar los conflictos de sincronización.');
     } finally {
       setLoading(false);
     }
@@ -33,29 +35,24 @@ export function SupervisorConflictsDashboard() {
   const handleResolve = async (resolution: 'FORCE_SYNC' | 'REJECT' | 'REVIEW') => {
     if (!selectedConflict) return;
     setActionLoading(true);
+    setError('');
     try {
-      const res = await fetch(`/api/offline/conflicts/${selectedConflict.id}/resolve`, {
+      const data:any = await apiClient(`/api/offline/conflicts/${selectedConflict.id}/resolve`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': localStorage.getItem('userId') || 'SUPERVISORA-01',
-        },
         body: JSON.stringify({
           resolution,
           notes: resolutionNotes || `Conflicto resuelto como ${resolution} por supervisión`,
         }),
       });
-
-      const data = await res.json();
       if (data.success) {
         setSelectedConflict(null);
         setResolutionNotes('');
         await fetchConflicts();
       } else {
-        alert(data.error || 'Error al resolver conflicto');
+        setError(data.error || 'No pudimos resolver el conflicto.');
       }
     } catch (err: any) {
-      alert(err.message);
+      setError(err?.message||'No pudimos resolver el conflicto.');
     } finally {
       setActionLoading(false);
     }
@@ -63,6 +60,7 @@ export function SupervisorConflictsDashboard() {
 
   return (
     <div className="space-y-6">
+      {error&&<div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 text-white">
         <div className="flex items-center gap-3">

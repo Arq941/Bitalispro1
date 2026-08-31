@@ -36,6 +36,20 @@ const securityService = read('src/server/auth/security.service.ts');
 const refundRoute = read('app/api/cash-sessions/[id]/refunds/route.ts');
 const conflictResolution = read('app/api/offline/conflicts/[id]/resolve/route.ts');
 const nextConfig = read('next.config.ts');
+const cashRouteAuth = read('src/cash/cash-route-auth.ts');
+const cashSessionRoute = read('app/api/cash-sessions/[id]/route.ts');
+const cashSessionClose = read('app/api/cash-sessions/[id]/close/route.ts');
+const cashSessionCount = read('app/api/cash-sessions/[id]/count/route.ts');
+const cashSessionExpenses = read('app/api/cash-sessions/[id]/expenses/route.ts');
+const cashSessionMovements = read('app/api/cash-sessions/[id]/movements/route.ts');
+const cashSessionReconciliation = read('app/api/cash-sessions/[id]/reconciliation/route.ts');
+const cashSessionWithdrawals = read('app/api/cash-sessions/[id]/withdrawals/route.ts');
+const collectorCash = read('app/api/cash/collector/[collectorId]/route.ts');
+const supervisorCash = read('app/api/cash/supervisor/dashboard/route.ts');
+const notificationsPage = read('app/notifications/page.tsx');
+const notificationsClient = read('lib/notifications-client.ts');
+const supervisorConflicts = read('components/offline/SupervisorConflictsDashboard.tsx');
+const syncPage = read('app/sync/page.tsx');
 
 assert(!securityService.includes('bitalis_super_secret_jwt_key'),
   'JWT signing must never fall back to a repository secret');
@@ -57,6 +71,27 @@ assert(refundRoute.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") &
   'refunds must use the authenticated supervisor identity');
 assert(conflictResolution.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && conflictResolution.includes('supervisorId: supervisor.userId'),
   'offline conflicts must not trust client-supplied supervisor identifiers');
+assert(cashRouteAuth.includes("context.role==='ADMIN'||context.role==='SUPERVISORA'") && cashRouteAuth.includes('session.collectorId!==context.userId'),
+  'cash session access must be restricted to its collector or supervision');
+for(const [name,route] of Object.entries({cashSessionRoute,cashSessionClose,cashSessionCount,cashSessionExpenses,cashSessionMovements,cashSessionReconciliation,cashSessionWithdrawals})){
+  assert(route.includes('requireCashSessionAccess(req,id)'),name+' must authorize the requested cash session');
+}
+assert(cashSessionClose.includes('closedBy:context.userId') && cashSessionCount.includes('countedBy:context.userId') &&
+  cashSessionExpenses.includes('userId: context.userId') && cashSessionMovements.includes('createdBy: context.userId') &&
+  cashSessionWithdrawals.includes('userId: context.userId'),
+  'legacy cash writes must use the authenticated identity instead of client-supplied user ids');
+assert(collectorCash.includes('requireCollectorOrSupervisor(req,collectorId)'),
+  'collector cash lookup must prevent access to another collector');
+assert(supervisorCash.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])"),
+  'cash supervisor dashboard must require a supervision role');
+assert(notificationsPage.includes("href:'/sync'") && notificationsClient.includes("return '/sync'"),
+  'offline and conflict notifications must open the existing synchronization center');
+assert(!notificationsPage.includes('/offline/conflicts') && !notificationsClient.includes('/offline/conflicts'),
+  'notifications must never navigate to the removed offline conflicts route');
+assert(supervisorConflicts.includes('apiClient(`/api/offline/conflicts') && !supervisorConflicts.includes("'SUPERVISORA-01'") && !supervisorConflicts.includes("'x-user-id'"),
+  'conflict supervision must use the authenticated API client and never a fabricated identity');
+assert(syncPage.includes("role==='ADMIN'||role==='SUPERVISORA'") && syncPage.includes('<SupervisorConflictsDashboard/>'),
+  'the synchronization center must expose server conflict resolution only to supervision roles');
 for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
   assert(nextConfig.includes(header),'global security headers must include '+header);
 }
@@ -149,6 +184,8 @@ assert(offlineStorage.includes("const DB_VERSION=2") && offlineStorage.includes(
   'offline queue must recover interrupted sync and reconcile each server result');
 assert(offlineStorage.includes("userId") && offlineStorage.includes("deviceId") && offlineStorage.includes("__ownerUserId"),
   'offline operations and cached records must remain scoped to their owner and device');
+assert(!offlineStorage.includes("localStorage.getItem('userId')"),
+  'durable offline storage must never recover ownership from a stale legacy userId key');
 assert(offlineClient.includes("apiClient<SyncReply>") && !offlineClient.includes("'COBRADOR-01'") && !offlineClient.includes("'PWA-DEVICE-01'"),
   'offline sync must use authenticated API access and never fallback to fabricated identities');
 assert(offlineClient.includes("localStorage.getItem('bitalis_auth_user')") && offlineClient.includes("if(!userId)return null"),

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
+import {httpStatusForCashError,requireCashSessionAccess} from '@/src/cash/cash-route-auth';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const {context,session}=await requireCashSessionAccess(req,id);
     const body = await req.json();
 
     if (!body.amount || !body.type) {
@@ -12,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const movement = await CashService.addCashMovement({
       cashSessionId: id,
-      collectorId: body.collectorId,
+      collectorId: session.collectorId||session.userId,
       type: body.type,
       amount: body.amount,
       reference: body.reference,
@@ -21,26 +23,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       paymentId: body.paymentId,
       clientCapturedAt: body.clientCapturedAt,
       idempotencyKey: body.idempotencyKey,
-      createdBy: body.userId || body.createdBy,
+      createdBy: context.userId,
     });
 
     return NextResponse.json({ success: true, data: movement }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to add cash movement' }, { status: 400 });
+    const message=error.message||'No pudimos registrar el movimiento de caja.';
+    return NextResponse.json({ error: message }, { status: httpStatusForCashError(message) });
   }
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const session = await CashService.getSessionById(id);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Cash session not found' }, { status: 404 });
-    }
+    const {session}=await requireCashSessionAccess(req,id);
 
     return NextResponse.json({ success: true, data: session.movements }, { status: 200 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch cash movements' }, { status: 400 });
+    const message=error.message||'No pudimos consultar los movimientos de caja.';
+    return NextResponse.json({ error: message }, { status: httpStatusForCashError(message) });
   }
 }

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
+import {httpStatusForCashError,requireCashSessionAccess} from '@/src/cash/cash-route-auth';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const {context}=await requireCashSessionAccess(req,id);
     const body = await req.json();
 
-    const closedBy = body.closedBy || body.userId || 'COLLECTOR';
-
     const result = await CashService.closeCashSession(id, {
-      closedBy,
+      closedBy:context.userId,
       closingNotes: body.notes || body.closingNotes,
       latitude: body.latitude,
       longitude: body.longitude,
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ success: true, data: result }, { status: 200 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to close cash session' }, { status: 400 });
+    const message=error.message||'No pudimos cerrar la sesión de caja.';
+    return NextResponse.json({ error: message }, { status: httpStatusForCashError(message) });
   }
 }
