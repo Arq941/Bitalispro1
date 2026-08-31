@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CashService } from '@/src/cash/cash.service';
+import {httpStatusForCashError,requireCashSessionAccess} from '@/src/cash/cash-route-auth';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const {context}=await requireCashSessionAccess(req,id);
     const body = await req.json();
 
     if (!body.amount || !body.reason) {
@@ -16,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const movement = await CashService.createWithdrawal({
       cashSessionId: id,
-      userId: body.userId || body.collectorId || 'SYSTEM',
+      userId: context.userId,
       amount: body.amount,
       reason: body.reason,
       destination: body.destination,
@@ -28,6 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ success: true, data: movement }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to process withdrawal' }, { status: 400 });
+    const message=error.message||'No pudimos registrar el retiro.';
+    return NextResponse.json({ error: message }, { status: httpStatusForCashError(message) });
   }
 }
