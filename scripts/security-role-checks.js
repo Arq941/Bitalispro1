@@ -36,6 +36,16 @@ const securityService = read('src/server/auth/security.service.ts');
 const refundRoute = read('app/api/cash-sessions/[id]/refunds/route.ts');
 const conflictResolution = read('app/api/offline/conflicts/[id]/resolve/route.ts');
 const nextConfig = read('next.config.ts');
+const cashRouteAuth = read('src/cash/cash-route-auth.ts');
+const cashSessionRoute = read('app/api/cash-sessions/[id]/route.ts');
+const cashSessionClose = read('app/api/cash-sessions/[id]/close/route.ts');
+const cashSessionCount = read('app/api/cash-sessions/[id]/count/route.ts');
+const cashSessionExpenses = read('app/api/cash-sessions/[id]/expenses/route.ts');
+const cashSessionMovements = read('app/api/cash-sessions/[id]/movements/route.ts');
+const cashSessionReconciliation = read('app/api/cash-sessions/[id]/reconciliation/route.ts');
+const cashSessionWithdrawals = read('app/api/cash-sessions/[id]/withdrawals/route.ts');
+const collectorCash = read('app/api/cash/collector/[collectorId]/route.ts');
+const supervisorCash = read('app/api/cash/supervisor/dashboard/route.ts');
 
 assert(!securityService.includes('bitalis_super_secret_jwt_key'),
   'JWT signing must never fall back to a repository secret');
@@ -57,6 +67,19 @@ assert(refundRoute.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") &
   'refunds must use the authenticated supervisor identity');
 assert(conflictResolution.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])") && conflictResolution.includes('supervisorId: supervisor.userId'),
   'offline conflicts must not trust client-supplied supervisor identifiers');
+assert(cashRouteAuth.includes("context.role==='ADMIN'||context.role==='SUPERVISORA'") && cashRouteAuth.includes('session.collectorId!==context.userId'),
+  'cash session access must be restricted to its collector or supervision');
+for(const [name,route] of Object.entries({cashSessionRoute,cashSessionClose,cashSessionCount,cashSessionExpenses,cashSessionMovements,cashSessionReconciliation,cashSessionWithdrawals})){
+  assert(route.includes('requireCashSessionAccess(req,id)'),name+' must authorize the requested cash session');
+}
+assert(cashSessionClose.includes('closedBy:context.userId') && cashSessionCount.includes('countedBy:context.userId') &&
+  cashSessionExpenses.includes('userId: context.userId') && cashSessionMovements.includes('createdBy: context.userId') &&
+  cashSessionWithdrawals.includes('userId: context.userId'),
+  'legacy cash writes must use the authenticated identity instead of client-supplied user ids');
+assert(collectorCash.includes('requireCollectorOrSupervisor(req,collectorId)'),
+  'collector cash lookup must prevent access to another collector');
+assert(supervisorCash.includes("requireTrustedRole(req,['ADMIN','SUPERVISORA'])"),
+  'cash supervisor dashboard must require a supervision role');
 for(const header of ['Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options','X-Frame-Options']){
   assert(nextConfig.includes(header),'global security headers must include '+header);
 }
