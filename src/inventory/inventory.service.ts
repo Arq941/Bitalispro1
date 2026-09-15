@@ -89,6 +89,38 @@ export class InventoryService {
 
   static stocks = InventoryStore.stocks;
 
+  private static async consumeLotsFefo(tx: any, warehouseId: string, productId: string, quantity: number) {
+    const allLots = await tx.inventoryLot.findMany({
+      where: { warehouseId, productId, status: 'ACTIVE', quantityAvailable: { gt: 0 } },
+      orderBy: [{ expirationDate: 'asc' }, { receivedAt: 'asc' }],
+    });
+    // Existing installations may have legacy stock without lot history. FEFO
+    // becomes authoritative as soon as at least one lot exists for the SKU.
+    if (!allLots.length) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const lots = allLots.filter((lot: any) => !lot.expirationDate || lot.expirationDate >= today);
+    const available = lots.reduce((sum: number, lot: any) => sum + lot.quantityAvailable, 0);
+    if (available < quantity) throw new Error(`Los lotes registrados sólo respaldan ${available} unidad(es); concilia lotes antes de entregar.`);
+    let remaining = quantity;
+    const consumed: Array<{ lotId: string; lotNumber: string; quantity: number }> = [];
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, lot.quantityAvailable);
+      const updated = await tx.inventoryLot.updateMany({
+        where: { id: lot.id, quantityAvailable: { gte: take }, status: 'ACTIVE' },
+        data: { quantityAvailable: { decrement: take } },
+      });
+      if (updated.count !== 1) throw new Error('La existencia del lote cambió durante la entrega.');
+      if (lot.quantityAvailable === take) {
+        await tx.inventoryLot.update({ where: { id: lot.id }, data: { status: 'EXHAUSTED' } });
+      }
+      consumed.push({ lotId: lot.id, lotNumber: lot.lotNumber, quantity: take });
+      remaining -= take;
+    }
+    return consumed;
+  }
+
   static clearMemoryStore() {
     InventoryStore.clear();
   }
@@ -664,6 +696,7 @@ export class InventoryService {
             if (updated.count !== 1) {
               throw new Error('La existencia reservada ya no está disponible.');
             }
+            await this.consumeLotsFefo(tx, data.warehouseId, data.productId, data.quantity);
           });
         } catch (error) { this.failClosedInProduction(error);
           reservation.status = 'CONVERTED_TO_DELIVERY';
@@ -705,19 +738,22 @@ export class InventoryService {
 
     try {
       const prisma = PrismaService.getInstance();
-      const updated = await prisma.inventoryStock.updateMany({
-        where: {
-          warehouseId: data.warehouseId,
-          productId: data.productId,
-          quantityAvailable: { gte: data.quantity },
-          quantityOnHand: { gte: data.quantity },
-        },
-        data: {
-          quantityOnHand: { decrement: data.quantity },
-          quantityAvailable: { decrement: data.quantity },
-        },
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.inventoryStock.updateMany({
+          where: {
+            warehouseId: data.warehouseId,
+            productId: data.productId,
+            quantityAvailable: { gte: data.quantity },
+            quantityOnHand: { gte: data.quantity },
+          },
+          data: {
+            quantityOnHand: { decrement: data.quantity },
+            quantityAvailable: { decrement: data.quantity },
+          },
+        });
+        if (updated.count !== 1) throw new Error('La existencia cambió durante la entrega. Actualiza e intenta nuevamente.');
+        await this.consumeLotsFefo(tx, data.warehouseId, data.productId, data.quantity);
       });
-      if (updated.count !== 1) throw new Error('La existencia cambió durante la entrega. Actualiza e intenta nuevamente.');
     } catch (error) { this.failClosedInProduction(error);
       const key = this.getStockKey(data.warehouseId, data.productId);
       const st = InventoryStore.stocks.get(key);
